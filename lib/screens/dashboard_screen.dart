@@ -120,9 +120,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       .collection('transactions');
 
   String _groupType = 'monthly';
-  String _filterType = 'all';
-  String _paymentFilter = 'all';
   String _sortOrder = 'newest';
+
+  // ตัวแปรสำหรับ Multi-select Filter
+  Set<String> _selectedTypes = {
+    'income',
+    'expense'
+  }; // เริ่มต้นเลือกทั้งรายรับ-รายจ่าย
+  Set<String> _selectedCategories = {}; // ค่าว่าง = แสดงทั้งหมด
+  Set<String> _selectedPayments = {}; // ค่าว่าง = แสดงทั้งหมด
 
   @override
   void initState() {
@@ -312,6 +318,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Color _paymentColorOf(String payment) {
     if (!_paymentColors.containsKey(payment)) return Colors.red;
     return _paymentColors[payment] ?? _getDefaultPaymentColor(payment);
+  }
+
+  // สร้างหน้าต่างให้ติ๊กเลือกแบบ Multi-select
+  Future<void> _showMultiSelectDialog({
+    required String title,
+    required Map<String, String> items, // key: value (เพื่อแสดงผล)
+    required Set<String> selectedItems,
+    required ValueChanged<Set<String>> onConfirm,
+  }) async {
+    // ใช้ตัวแปรชั่วคราวขณะอยู่ในหน้าต่าง
+    Set<String> tempSelected = Set.from(selectedItems);
+    if (tempSelected.isEmpty && items.isNotEmpty) {
+      tempSelected.addAll(items.keys); // ถ้าว่างแปลว่าเดิมเลือกทั้งหมด
+    }
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              title: Text(title,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+              contentPadding: const EdgeInsets.only(top: 12),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: items.entries.map((entry) {
+                    return CheckboxListTile(
+                      title: Text(entry.value),
+                      value: tempSelected.contains(entry.key),
+                      activeColor: Theme.of(context).colorScheme.primary,
+                      onChanged: (bool? checked) {
+                        setDialogState(() {
+                          if (checked == true) {
+                            tempSelected.add(entry.key);
+                          } else {
+                            tempSelected.remove(entry.key);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setDialogState(() {
+                      if (tempSelected.length == items.length) {
+                        tempSelected.clear();
+                      } else {
+                        tempSelected.addAll(items.keys);
+                      }
+                    });
+                  },
+                  child: Text(tempSelected.length == items.length
+                      ? 'เอาออกทั้งหมด'
+                      : 'เลือกทั้งหมด'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(T.get('cancel')),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    onConfirm(tempSelected);
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('ตกลง'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showQuickAddCategoryDialog(
@@ -797,8 +883,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // ปุ่มเปิด Dialog Multi-select
+  Widget _buildMultiSelectButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+    bool isActive = false,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+              color: isActive
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : Theme.of(context)
+                      .colorScheme
+                      .surfaceVariant
+                      .withOpacity(0.5),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isActive
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.transparent,
+                width: 1,
+              )),
+          child: Row(
+            children: [
+              Icon(icon,
+                  size: 16,
+                  color:
+                      isActive ? Theme.of(context).colorScheme.primary : null),
+              const SizedBox(width: 4),
+              Text(label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color:
+                        isActive ? Theme.of(context).colorScheme.primary : null,
+                  )),
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down,
+                  size: 16,
+                  color:
+                      isActive ? Theme.of(context).colorScheme.primary : null),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFilterBar() {
-    List<String> paymentItems = ['all', ..._paymentIcons.keys];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -810,17 +949,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Icons.date_range,
             (val) => setState(() => _groupType = val!),
           ),
-          _buildDropdown(
-            _filterType,
-            ['all', 'income', 'expense'],
-            Icons.filter_list,
-            (val) => setState(() => _filterType = val!),
+          _buildMultiSelectButton(
+            label: 'ประเภท',
+            icon: Icons.filter_list,
+            isActive: _selectedTypes.isNotEmpty && _selectedTypes.length < 2,
+            onTap: () {
+              _showMultiSelectDialog(
+                title: 'เลือกประเภท',
+                items: {'income': T.get('income'), 'expense': T.get('expense')},
+                selectedItems: _selectedTypes,
+                onConfirm: (val) => setState(() => _selectedTypes = val),
+              );
+            },
           ),
-          _buildDropdown(
-            _paymentFilter,
-            paymentItems,
-            Icons.payment,
-            (val) => setState(() => _paymentFilter = val!),
+          _buildMultiSelectButton(
+            label: 'หมวดหมู่',
+            icon: Icons.category,
+            isActive: _selectedCategories.isNotEmpty &&
+                _selectedCategories.length < (_categoryIcons.length + 1),
+            onTap: () {
+              Map<String, String> catItems = {};
+              for (var cat in _categoryIcons.keys) {
+                catItems[cat] = T.get(cat);
+              }
+              catItems['transfer'] = 'โอนเงิน';
+
+              _showMultiSelectDialog(
+                title: 'กรองหมวดหมู่',
+                items: catItems,
+                selectedItems: _selectedCategories,
+                onConfirm: (val) {
+                  setState(() {
+                    if (val.length == catItems.length) {
+                      _selectedCategories
+                          .clear(); // เคลียร์เพื่อบอกว่าเอาทั้งหมด
+                    } else {
+                      _selectedCategories = val;
+                    }
+                  });
+                },
+              );
+            },
+          ),
+          _buildMultiSelectButton(
+            label: 'บัญชี/กระเป๋า',
+            icon: Icons.payment,
+            isActive: _selectedPayments.isNotEmpty &&
+                _selectedPayments.length < _paymentIcons.length,
+            onTap: () {
+              Map<String, String> payItems = {};
+              for (var pay in _paymentIcons.keys) {
+                payItems[pay] = T.get(pay);
+              }
+              _showMultiSelectDialog(
+                title: 'กรองบัญชีที่ชำระ',
+                items: payItems,
+                selectedItems: _selectedPayments,
+                onConfirm: (val) {
+                  setState(() {
+                    if (val.length == payItems.length) {
+                      _selectedPayments.clear(); // เคลียร์เพื่อบอกว่าเอาทั้งหมด
+                    } else {
+                      _selectedPayments = val;
+                    }
+                  });
+                },
+              );
+            },
           ),
           _buildDropdown(
             _sortOrder,
@@ -1150,14 +1345,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // ฟังก์ชันช่วยในการกรองข้อมูลตาม Multi-select
+  bool _isMatchFilters(TransactionModel tx) {
+    // 1. กรองประเภท รายรับ/รายจ่าย
+    if (tx.isExpense && !_selectedTypes.contains('expense')) return false;
+    if (!tx.isExpense && !_selectedTypes.contains('income')) return false;
+
+    // 2. กรองหมวดหมู่ (ถ้า Set ไม่ว่าง แปลว่ามีการเลือกเฉพาะเจาะจง)
+    if (_selectedCategories.isNotEmpty &&
+        !_selectedCategories.contains(tx.category)) return false;
+
+    // 3. กรองช่องทางชำระ (ถ้า Set ไม่ว่าง แปลว่ามีการเลือกเฉพาะเจาะจง)
+    if (_selectedPayments.isNotEmpty &&
+        !_selectedPayments.contains(tx.paymentMethod)) return false;
+
+    return true;
+  }
+
   List<TransactionModel> _filterAndSort(List<TransactionModel> transactions) {
-    final result = transactions.where((tx) {
-      if (_filterType == 'income' && tx.isExpense) return false;
-      if (_filterType == 'expense' && !tx.isExpense) return false;
-      if (_paymentFilter != 'all' && tx.paymentMethod != _paymentFilter)
-        return false;
-      return true;
-    }).toList();
+    final result = transactions.where((tx) => _isMatchFilters(tx)).toList();
 
     result.sort((a, b) {
       switch (_sortOrder) {
@@ -1436,13 +1642,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           allTransactions.where((tx) => _groupKey(tx) == latestKey).toList();
     }
 
-    final allFilteredTx = scopeTransactions.where((tx) {
-      if (_filterType == 'income' && tx.isExpense) return false;
-      if (_filterType == 'expense' && !tx.isExpense) return false;
-      if (_paymentFilter != 'all' && tx.paymentMethod != _paymentFilter)
-        return false;
-      return true;
-    }).toList();
+    final allFilteredTx =
+        scopeTransactions.where((tx) => _isMatchFilters(tx)).toList();
 
     final filteredForStats =
         allFilteredTx.where((tx) => tx.category != 'transfer').toList();
