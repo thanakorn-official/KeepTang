@@ -121,6 +121,15 @@ class T {
       'clearAll': 'ล้างทั้งหมด',
       'apply': 'ใช้ตัวกรอง',
       'selected': 'รายการที่เลือก',
+      'exportCsv': 'ส่งออก CSV',
+      'transfer': 'โอนเงิน',
+      'transferBetweenAccounts': 'โอนเงินระหว่างบัญชี',
+      'fromAccount': 'จากบัญชี (ต้นทาง)',
+      'toAccount': 'เข้าบัญชี (ปลายทาง)',
+      'optionalNote': 'บันทึกช่วยจำ (ไม่บังคับ)',
+      'confirmTransfer': 'ยืนยันการโอนเงิน',
+      'transferredOut': 'โอนออกไป',
+      'transferredIn': 'รับโอนจาก',
     },
     'en': {
       'appTitle': 'KeepTang',
@@ -242,11 +251,20 @@ class T {
       'clearAll': 'Clear all',
       'apply': 'Apply filters',
       'selected': 'selected',
+      'exportCsv': 'Export CSV',
+      'transfer': 'Transfer',
+      'transferBetweenAccounts': 'Transfer Between Accounts',
+      'fromAccount': 'From Account (Source)',
+      'toAccount': 'To Account (Destination)',
+      'optionalNote': 'Note (Optional)',
+      'confirmTransfer': 'Confirm Transfer',
+      'transferredOut': 'Transferred out to',
+      'transferredIn': 'Transferred in from',
     }
   };
 
   static String get(String key) {
-    final lang = languageNotifier.value;
-    return _dict[lang]?[key] ?? key;
+    final lang = languageNotifier.value == 'en' ? 'en' : 'th';
+    return _dict[lang]?[key] ?? _dict['th']?[key] ?? key;
   }
 }

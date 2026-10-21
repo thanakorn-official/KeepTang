@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import '../models/transaction_model.dart';
 import '../main.dart';
+import '../services/export_service.dart';
 import '../services/guest_service.dart';
 import '../utils/l10n.dart';
 import 'settings_screen.dart';
@@ -122,13 +123,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _groupType = 'monthly';
   String _sortOrder = 'newest';
 
-  // ตัวแปรสำหรับ Multi-select Filter
+
   Set<String> _selectedTypes = {
     'income',
     'expense'
-  }; // เริ่มต้นเลือกทั้งรายรับ-รายจ่าย
-  Set<String> _selectedCategories = {}; // ค่าว่าง = แสดงทั้งหมด
-  Set<String> _selectedPayments = {}; // ค่าว่าง = แสดงทั้งหมด
+  };
+  Set<String> _selectedCategories = {};
+  Set<String> _selectedPayments = {};
 
   @override
   void initState() {
@@ -248,7 +249,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final Map<String, dynamic> decoded = jsonDecode(catIconsStr);
       decoded.forEach((k, v) {
         if (_categoryIcons.containsKey(k)) {
-          _categoryIcons[k] = IconData(v as int, fontFamily: 'MaterialIcons');
+          _categoryIcons[k] = _selectableCategoryIcons.firstWhere(
+            (icon) => icon.codePoint == (v as int),
+            orElse: () => _getDefaultCategoryIcon(k),
+          );
         }
       });
     }
@@ -282,7 +286,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final Map<String, dynamic> decoded = jsonDecode(payIconsStr);
       decoded.forEach((k, v) {
         if (_paymentIcons.containsKey(k)) {
-          _paymentIcons[k] = IconData(v as int, fontFamily: 'MaterialIcons');
+          _paymentIcons[k] = _selectablePaymentIcons.firstWhere(
+            (icon) => icon.codePoint == (v as int),
+            orElse: () => _getDefaultPaymentIcon(k),
+          );
         }
       });
     }
@@ -320,17 +327,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _paymentColors[payment] ?? _getDefaultPaymentColor(payment);
   }
 
-  // สร้างหน้าต่างให้ติ๊กเลือกแบบ Multi-select
+
   Future<void> _showMultiSelectDialog({
     required String title,
-    required Map<String, String> items, // key: value (เพื่อแสดงผล)
+    required Map<String, String> items,
     required Set<String> selectedItems,
     required ValueChanged<Set<String>> onConfirm,
   }) async {
-    // ใช้ตัวแปรชั่วคราวขณะอยู่ในหน้าต่าง
+
     Set<String> tempSelected = Set.from(selectedItems);
     if (tempSelected.isEmpty && items.isNotEmpty) {
-      tempSelected.addAll(items.keys); // ถ้าว่างแปลว่าเดิมเลือกทั้งหมด
+      tempSelected.addAll(items.keys);
     }
 
     await showDialog(
@@ -504,7 +511,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _availableColors.map((color) {
-                      final isSelected = selectedColor.value == color.value;
+                      final isSelected = selectedColor.toARGB32() == color.toARGB32();
                       return GestureDetector(
                         onTap: () =>
                             setDialogState(() => selectedColor = color),
@@ -520,7 +527,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             boxShadow: [
                               if (isSelected)
                                 BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
+                                    color: Colors.black.withValues(alpha: 0.3),
                                     blurRadius: 4,
                                     spreadRadius: 1)
                             ],
@@ -558,12 +565,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     await prefs.setString(
                         'app_category_color_values',
                         jsonEncode(_categoryColors
-                            .map((k, v) => MapEntry(k, v.value))));
+                            .map((k, v) => MapEntry(k, v.toARGB32()))));
 
                     onAdded(text);
                     setModalState(() {});
                   }
-                  if (mounted) Navigator.pop(ctx);
+                  if (ctx.mounted) Navigator.pop(ctx);
                 },
                 child: Text(T.get('save')),
               ),
@@ -644,7 +651,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _availableColors.map((color) {
-                      final isSelected = selectedColor.value == color.value;
+                      final isSelected = selectedColor.toARGB32() == color.toARGB32();
                       return GestureDetector(
                         onTap: () =>
                             setDialogState(() => selectedColor = color),
@@ -660,7 +667,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             boxShadow: [
                               if (isSelected)
                                 BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
+                                    color: Colors.black.withValues(alpha: 0.3),
                                     blurRadius: 4,
                                     spreadRadius: 1)
                             ],
@@ -698,12 +705,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     await prefs.setString(
                         'app_payment_color_values',
                         jsonEncode(_paymentColors
-                            .map((k, v) => MapEntry(k, v.value))));
+                            .map((k, v) => MapEntry(k, v.toARGB32()))));
 
                     onAdded(text);
                     setModalState(() {});
                   }
-                  if (mounted) Navigator.pop(ctx);
+                  if (ctx.mounted) Navigator.pop(ctx);
                 },
                 child: Text(T.get('save')),
               ),
@@ -744,8 +751,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('โอนเงินระหว่างบัญชี',
-                        style: TextStyle(
+                    Text(T.get('transferBetweenAccounts'),
+                        style: const TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 16),
                     TextField(
@@ -756,7 +763,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         keyboardType: TextInputType.number),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: fromPayment,
+                      initialValue: fromPayment,
                       decoration: const InputDecoration(
                           labelText: 'จากบัญชี (ต้นทาง)',
                           border: OutlineInputBorder()),
@@ -778,7 +785,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: toPayment,
+                      initialValue: toPayment,
                       decoration: const InputDecoration(
                           labelText: 'เข้าบัญชี (ปลายทาง)',
                           border: OutlineInputBorder()),
@@ -814,7 +821,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             foregroundColor: Colors.white),
                         onPressed: () {
                           if (amountController.text.isEmpty ||
-                              fromPayment == toPayment) return;
+                              fromPayment == toPayment) {
+                            return;
+                          }
 
                           _transactionsCollection.add({
                             'title': noteController.text.isNotEmpty
@@ -842,8 +851,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                           Navigator.pop(ctx);
                         },
-                        child: const Text('ยืนยันการโอนเงิน',
-                            style: TextStyle(fontSize: 16)),
+                        child: Text(T.get('confirmTransfer'),
+                            style: const TextStyle(fontSize: 16)),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -893,7 +902,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(20),
       ),
       child: DropdownButtonHideUnderline(
@@ -919,7 +928,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ปุ่มเปิด Dialog Multi-select
+
   Widget _buildMultiSelectButton({
     required String label,
     required IconData icon,
@@ -939,8 +948,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ? Theme.of(context).colorScheme.primaryContainer
                   : Theme.of(context)
                       .colorScheme
-                      .surfaceVariant
-                      .withOpacity(0.5),
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: isActive
@@ -1011,7 +1020,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showCategoryFilter() {
     final items = <String, String>{
       for (final category in _categoryIcons.keys) category: T.get(category),
-      'transfer': 'โอนเงิน',
+      'transfer': T.get('transfer'),
     };
     _showMultiSelectDialog(
       title: T.get('selectCategory'),
@@ -1165,13 +1174,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (selected == 'transfer') {
       items.add(
-        const DropdownMenuItem(
+        DropdownMenuItem(
           value: 'transfer',
           child: Row(
             children: [
-              Icon(Icons.swap_horiz, color: Colors.blueGrey, size: 20),
-              SizedBox(width: 8),
-              Text('โอนเงิน'),
+              const Icon(Icons.swap_horiz, color: Colors.blueGrey, size: 20),
+              const SizedBox(width: 8),
+              Text(T.get('transfer')),
             ],
           ),
         ),
@@ -1187,7 +1196,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         Expanded(
           child: DropdownButtonFormField<String>(
-            value: selectedValue,
+            initialValue: selectedValue,
             decoration: InputDecoration(
               labelText: T.get('categoryLabel'),
               border: outlined ? const OutlineInputBorder() : null,
@@ -1244,7 +1253,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         Expanded(
           child: DropdownButtonFormField<String>(
-            value: selectedValue,
+            initialValue: selectedValue,
             decoration: InputDecoration(
               labelText: T.get('paymentMethodLabel'),
               border: outlined ? const OutlineInputBorder() : null,
@@ -1434,7 +1443,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             foregroundColor: Colors.white),
                         onPressed: () {
                           if (titleController.text.isEmpty ||
-                              amountController.text.isEmpty) return;
+                              amountController.text.isEmpty) {
+                            return;
+                          }
                           _transactionsCollection.add({
                             'title': titleController.text,
                             'amount':
@@ -1461,19 +1472,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ฟังก์ชันช่วยในการกรองข้อมูลตาม Multi-select
+
   bool _isMatchFilters(TransactionModel tx) {
-    // 1. กรองประเภท รายรับ/รายจ่าย
-    if (tx.isExpense && !_selectedTypes.contains('expense')) return false;
-    if (!tx.isExpense && !_selectedTypes.contains('income')) return false;
 
-    // 2. กรองหมวดหมู่ (ถ้า Set ไม่ว่าง แปลว่ามีการเลือกเฉพาะเจาะจง)
+    if (tx.isExpense && !_selectedTypes.contains('expense')) {
+      return false;
+    }
+    if (!tx.isExpense && !_selectedTypes.contains('income')) {
+      return false;
+    }
+
+
     if (_selectedCategories.isNotEmpty &&
-        !_selectedCategories.contains(tx.category)) return false;
+        !_selectedCategories.contains(tx.category)) {
+      return false;
+    }
 
-    // 3. กรองช่องทางชำระ (ถ้า Set ไม่ว่าง แปลว่ามีการเลือกเฉพาะเจาะจง)
+
     if (_selectedPayments.isNotEmpty &&
-        !_selectedPayments.contains(tx.paymentMethod)) return false;
+        !_selectedPayments.contains(tx.paymentMethod)) {
+      return false;
+    }
 
     return true;
   }
@@ -1499,30 +1518,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _groupKey(TransactionModel tx) {
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
     switch (_groupType) {
       case 'daily':
-        return DateFormat('dd/MM/yyyy').format(tx.date);
+        return DateFormat('dd/MM/yyyy', locale).format(tx.date);
       case 'weekly':
         final startOfWeek =
             tx.date.subtract(Duration(days: tx.date.weekday - 1));
-        return DateFormat('dd/MM/yyyy').format(startOfWeek);
+        return DateFormat('dd/MM/yyyy', locale).format(startOfWeek);
       case 'monthly':
-        return DateFormat('MM/yyyy').format(tx.date);
+        return DateFormat('MM/yyyy', locale).format(tx.date);
       case 'yearly':
-        return DateFormat('yyyy').format(tx.date);
+        return DateFormat('yyyy', locale).format(tx.date);
       default:
-        return DateFormat('yyyy').format(tx.date);
+        return DateFormat('yyyy', locale).format(tx.date);
     }
   }
 
   int _compareGroupKeys(String a, String b) {
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
     switch (_groupType) {
       case 'daily':
       case 'weekly':
-        final format = DateFormat('dd/MM/yyyy');
+        final format = DateFormat('dd/MM/yyyy', locale);
         return format.parse(b).compareTo(format.parse(a));
       case 'monthly':
-        final format = DateFormat('MM/yyyy');
+        final format = DateFormat('MM/yyyy', locale);
         return format.parse(b).compareTo(format.parse(a));
       case 'yearly':
         return int.parse(b).compareTo(int.parse(a));
@@ -1532,13 +1553,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _groupHeader(String key) {
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
     switch (_groupType) {
       case 'daily':
         return '${T.get('date_prefix')} $key';
       case 'weekly':
-        final start = DateFormat('dd/MM/yyyy').parse(key);
+        final start = DateFormat('dd/MM/yyyy', locale).parse(key);
         final end = start.add(const Duration(days: 6));
-        return '${T.get('week_prefix')} $key - ${DateFormat('dd/MM/yyyy').format(end)}';
+        return '${T.get('week_prefix')} $key - ${DateFormat('dd/MM/yyyy', locale).format(end)}';
       case 'monthly':
         return '${T.get('month_prefix')} $key';
       case 'yearly':
@@ -1634,7 +1656,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 4),
             margin: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
-            backgroundColor: Colors.black.withOpacity(0.85),
+            backgroundColor: Colors.black.withValues(alpha: 0.85),
             content: Text(
               '${T.get('deleted')} ${tx.title}',
               style: const TextStyle(color: Colors.white),
@@ -1659,8 +1681,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildTransactionItem(BuildContext context, TransactionModel tx) {
-    final formattedAmount = NumberFormat('#,##0.00').format(tx.amount);
-    final formattedDate = DateFormat('dd/MM/yyyy HH:mm').format(tx.date);
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
+    final formattedAmount = NumberFormat('#,##0.00', locale).format(tx.amount);
+    final formattedDate = DateFormat('dd/MM/yyyy HH:mm', locale).format(tx.date);
     final amountColor = tx.isExpense ? Colors.red : Colors.green;
 
     final isCategoryValid =
@@ -1700,7 +1723,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: categoryColor.withOpacity(0.2),
+              backgroundColor: categoryColor.withValues(alpha: 0.2),
               child: Icon(categoryIcon, color: categoryColor),
             ),
             title: Text(tx.title,
@@ -1716,7 +1739,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(width: 4),
                     Text(
                       tx.category == 'transfer'
-                          ? 'โอนเงิน'
+                          ? T.get('transfer')
                           : (isCategoryValid
                               ? T.get(tx.category)
                               : tx.category),
@@ -1778,19 +1801,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final totalIncome = filteredForStats
         .where((tx) => !tx.isExpense)
-        .fold(0.0, (sum, tx) => sum + tx.amount);
+        .fold(0.0, (total, tx) => total + tx.amount);
     final totalExpense = filteredForStats
         .where((tx) => tx.isExpense)
-        .fold(0.0, (sum, tx) => sum + tx.amount);
+        .fold(0.0, (total, tx) => total + tx.amount);
 
     final realIncome = allFilteredTx
         .where((tx) => !tx.isExpense)
-        .fold(0.0, (sum, tx) => sum + tx.amount);
+        .fold(0.0, (total, tx) => total + tx.amount);
     final realExpense = allFilteredTx
         .where((tx) => tx.isExpense)
-        .fold(0.0, (sum, tx) => sum + tx.amount);
+        .fold(0.0, (total, tx) => total + tx.amount);
     final realBalance = realIncome - realExpense;
 
+    final exportTransactions = _filterAndSort(scopeTransactions);
     final listItems = _buildListItems(_filterAndSort(allTransactions));
 
     return CustomScrollView(
@@ -1807,6 +1831,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 )
               else if (filteredForStats.isNotEmpty)
                 _buildPieChart(filteredForStats),
+              if (allTransactions.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: OutlinedButton.icon(
+                      onPressed: exportTransactions.isEmpty
+                          ? null
+                          : () => ExportService.exportToCsv(exportTransactions),
+                      icon: const Icon(Icons.ios_share_outlined),
+                      label: Text(T.get('exportCsv')),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               _buildSummaryRow(totalIncome, totalExpense, realBalance),
               const Divider(height: 24),
               Padding(
@@ -1862,7 +1902,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.swap_horiz),
-                tooltip: 'โอนเงินระหว่างบัญชี',
+                tooltip: T.get('transferBetweenAccounts'),
                 onPressed: () => _showTransferSheet(context),
               ),
               IconButton(
@@ -1914,3 +1954,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
+

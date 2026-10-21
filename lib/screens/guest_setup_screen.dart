@@ -44,7 +44,7 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
           children: [
             Text(
               T.get('guestIdAdviceIntro'),
-              style: TextStyle(fontSize: 14),
+              style: const TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 8),
             Container(
@@ -215,7 +215,7 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12,
-                        color: scheme.onSurfaceVariant.withOpacity(0.8),
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                       ),
                     ),
                     const SizedBox(height: 32),

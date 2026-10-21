@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 
 class AppThemes {
-  // ── โหมดสว่าง: พื้นขาวนวล การ์ดขาวขอบบาง น้ำเงิน iOS ──
   static ThemeData get lightTheme {
     const primary = Color(0xFF007AFF);
     const secondary = Color(0xFF5856D6);
+
     final scheme = ColorScheme.fromSeed(
       seedColor: primary,
       brightness: Brightness.light,
-    ).copyWith(primary: primary, secondary: secondary, surface: Colors.white);
+    ).copyWith(
+      primary: primary,
+      secondary: secondary,
+      surface: Colors.white,
+    );
+
     return _build(
       scheme: scheme,
       scaffold: const Color(0xFFF2F2F7),
@@ -21,10 +26,10 @@ class AppThemes {
     );
   }
 
-  // ── โหมดมืด: เทาเข้มระดับ iOS น้ำเงินสว่าง ──
   static ThemeData get darkTheme {
     const primary = Color(0xFF0A84FF);
     const secondary = Color(0xFF5E5CE6);
+
     final scheme = ColorScheme.fromSeed(
       seedColor: primary,
       brightness: Brightness.dark,
@@ -33,6 +38,7 @@ class AppThemes {
       secondary: secondary,
       surface: const Color(0xFF2C2C2E),
     );
+
     return _build(
       scheme: scheme,
       scaffold: const Color(0xFF1C1C1E),
@@ -46,16 +52,9 @@ class AppThemes {
   }
 
   static ThemeData getTheme(String themeKey) {
-    switch (themeKey) {
-      case 'dark':
-        return darkTheme;
-      case 'light':
-      default:
-        return lightTheme;
-    }
+    return themeKey == 'dark' ? darkTheme : lightTheme;
   }
 
-  // โครง component กลางของทุกธีม ให้ทุกแบบมีดีไซน์เดียวกัน ต่างกันแค่ชุดสี
   static ThemeData _build({
     required ColorScheme scheme,
     required Color scaffold,
@@ -66,11 +65,24 @@ class AppThemes {
     required Color fabBg,
     required Color fabFg,
   }) {
+    final baseTextTheme = ThemeData(
+      brightness: scheme.brightness,
+      useMaterial3: true,
+    ).textTheme;
+
     return ThemeData(
       useMaterial3: true,
       brightness: scheme.brightness,
-      scaffoldBackgroundColor: scaffold,
       colorScheme: scheme,
+      scaffoldBackgroundColor: scaffold,
+
+      // ใช้ฟอนต์ระบบที่ Flutter เลือกให้
+      // เพื่อรองรับ fallback ของภาษาไทยบนแต่ละแพลตฟอร์ม
+      textTheme: baseTextTheme.apply(
+        bodyColor: scheme.onSurface,
+        displayColor: scheme.onSurface,
+      ),
+
       appBarTheme: AppBarTheme(
         backgroundColor: scaffold,
         foregroundColor: scheme.onSurface,
@@ -81,9 +93,9 @@ class AppThemes {
           color: scheme.onSurface,
           fontSize: 18,
           fontWeight: FontWeight.w700,
-          letterSpacing: -0.4,
         ),
       ),
+
       cardTheme: CardThemeData(
         color: card,
         elevation: 0,
@@ -92,33 +104,46 @@ class AppThemes {
           side: BorderSide(color: border, width: 0.8),
         ),
       ),
+
       listTileTheme: ListTileThemeData(
         iconColor: scheme.primary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
       ),
+
       inputDecorationTheme: InputDecorationThemeData(
         filled: true,
         fillColor: inputFill,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: scheme.primary, width: 1.6),
+          borderSide: BorderSide(
+            color: scheme.primary,
+            width: 1.6,
+          ),
         ),
       ),
+
       dialogTheme: DialogThemeData(
         backgroundColor: dialog,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
         titleTextStyle: TextStyle(
           color: scheme.onSurface,
           fontSize: 18,
           fontWeight: FontWeight.w700,
         ),
       ),
+
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: scheme.inverseSurface,
@@ -127,16 +152,27 @@ class AppThemes {
           fontSize: 14,
         ),
         actionTextColor: scheme.inversePrimary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
       ),
+
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: fabBg,
         foregroundColor: fabFg,
         elevation: 0,
         highlightElevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
       ),
-      dividerTheme: DividerThemeData(color: border, thickness: 1, space: 1),
+
+      dividerTheme: DividerThemeData(
+        color: border,
+        thickness: 1,
+        space: 1,
+      ),
+
       progressIndicatorTheme: ProgressIndicatorThemeData(
         color: scheme.primary,
       ),

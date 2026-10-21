@@ -96,7 +96,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   IconData _getCategoryIcon(String cat) {
     if (_categoryIconCodes.containsKey(cat)) {
-      return IconData(_categoryIconCodes[cat]!, fontFamily: 'MaterialIcons');
+      final codePoint = _categoryIconCodes[cat];
+      return _selectableCategoryIcons.firstWhere(
+        (icon) => icon.codePoint == codePoint,
+        orElse: () => Icons.category,
+      );
     }
     switch (cat) {
       case 'อาหาร':
@@ -156,7 +160,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   IconData _getPaymentIcon(String pay) {
     if (_paymentIconCodes.containsKey(pay)) {
-      return IconData(_paymentIconCodes[pay]!, fontFamily: 'MaterialIcons');
+      final codePoint = _paymentIconCodes[pay];
+      return _selectablePaymentIcons.firstWhere(
+        (icon) => icon.codePoint == codePoint,
+        orElse: () => Icons.payment,
+      );
     }
     switch (pay) {
       case 'cash':
@@ -334,7 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _availableColors.map((color) {
-                      final isSelected = selectedColor.value == color.value;
+                      final isSelected = selectedColor.toARGB32() == color.toARGB32();
                       return GestureDetector(
                         onTap: () =>
                             setDialogState(() => selectedColor = color),
@@ -350,7 +358,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             boxShadow: [
                               if (isSelected)
                                 BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
+                                    color: Colors.black.withValues(alpha: 0.3),
                                     blurRadius: 4,
                                     spreadRadius: 1)
                             ],
@@ -386,12 +394,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _categories.add(text);
                       }
                       _categoryIconCodes[text] = selectedIcon.codePoint;
-                      _categoryColorValues[text] = selectedColor.value;
+                      _categoryColorValues[text] = selectedColor.toARGB32();
                     });
                     await _saveCategories();
                     setModalState(() {});
                   }
-                  if (mounted) Navigator.pop(ctx);
+                  if (ctx.mounted) Navigator.pop(ctx);
                 },
                 child: Text(T.get('save')),
               ),
@@ -404,10 +412,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showPaymentDialog(StateSetter setModalState, {String? oldPayment}) {
     final isEditing = oldPayment != null;
-    final controller = TextEditingController(
-        text: isEditing
-            ? (T.get(oldPayment) == oldPayment ? oldPayment : T.get(oldPayment))
-            : '');
+    final initialPaymentLabel = isEditing ? T.get(oldPayment) : '';
+    final controller = TextEditingController(text: initialPaymentLabel);
     IconData selectedIcon =
         isEditing ? _getPaymentIcon(oldPayment) : _selectablePaymentIcons.first;
     Color selectedColor =
@@ -477,7 +483,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _availableColors.map((color) {
-                      final isSelected = selectedColor.value == color.value;
+                      final isSelected = selectedColor.toARGB32() == color.toARGB32();
                       return GestureDetector(
                         onTap: () =>
                             setDialogState(() => selectedColor = color),
@@ -493,7 +499,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             boxShadow: [
                               if (isSelected)
                                 BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
+                                    color: Colors.black.withValues(alpha: 0.3),
                                     blurRadius: 4,
                                     spreadRadius: 1)
                             ],
@@ -515,7 +521,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Text(T.get('cancel'))),
               ElevatedButton(
                 onPressed: () async {
-                  final text = controller.text.trim();
+                  final inputText = controller.text.trim();
+                  final text = isEditing && inputText == initialPaymentLabel
+                      ? oldPayment
+                      : inputText;
                   if (text.isNotEmpty) {
                     setState(() {
                       if (isEditing) {
@@ -529,12 +538,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _payments.add(text);
                       }
                       _paymentIconCodes[text] = selectedIcon.codePoint;
-                      _paymentColorValues[text] = selectedColor.value;
+                      _paymentColorValues[text] = selectedColor.toARGB32();
                     });
                     await _savePayments();
                     setModalState(() {});
                   }
-                  if (mounted) Navigator.pop(ctx);
+                  if (ctx.mounted) Navigator.pop(ctx);
                 },
                 child: Text(T.get('save')),
               ),
@@ -649,7 +658,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: catColor.withOpacity(0.2),
+                          backgroundColor: catColor.withValues(alpha: 0.2),
                           child: Icon(_getCategoryIcon(cat), color: catColor),
                         ),
                         title: Text(T.get(cat),
@@ -738,7 +747,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: payColor.withOpacity(0.2),
+                          backgroundColor: payColor.withValues(alpha: 0.2),
                           child: Icon(_getPaymentIcon(pay), color: payColor),
                         ),
                         title: Text(T.get(pay),
@@ -935,6 +944,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                       onTap: _openManagePaymentsScreen,
                     ),
+                    const Divider(height: 1),
                   ],
                 ),
               ),
@@ -1023,3 +1033,4 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
+

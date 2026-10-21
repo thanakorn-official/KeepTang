@@ -7,6 +7,11 @@ class TransactionModel {
   final String category;
   final String paymentMethod;
   final DateTime? updatedAt;
+  final double vatAmount;
+  final String taxId;
+  final String branchCode;
+  final String invoiceNo;
+  final String customerName;
 
   TransactionModel({
     required this.id,
@@ -17,7 +22,14 @@ class TransactionModel {
     required this.category,
     this.paymentMethod = 'cash',
     this.updatedAt,
-  });
+    double? vatAmount,
+    this.taxId = '',
+    this.branchCode = '',
+    String? invoiceNo,
+    String? customerName,
+  })  : vatAmount = vatAmount ?? amount - (amount / 1.07),
+        invoiceNo = invoiceNo ?? id,
+        customerName = customerName ?? title;
 
   factory TransactionModel.fromMap(Map<String, dynamic> map) {
     return TransactionModel(
@@ -30,6 +42,11 @@ class TransactionModel {
       paymentMethod: map['paymentMethod'] ?? 'cash',
       updatedAt:
           map['updatedAt'] != null ? DateTime.parse(map['updatedAt']) : null,
+      vatAmount: (map['vatAmount'] as num?)?.toDouble(),
+      taxId: map['taxId'] ?? '',
+      branchCode: map['branchCode'] ?? '',
+      invoiceNo: map['invoiceNo'],
+      customerName: map['customerName'],
     );
   }
 
@@ -41,6 +58,11 @@ class TransactionModel {
       'isExpense': isExpense ? 1 : 0,
       'category': category,
       'paymentMethod': paymentMethod,
+      'vatAmount': vatAmount,
+      'taxId': taxId,
+      'branchCode': branchCode,
+      'invoiceNo': invoiceNo,
+      'customerName': customerName,
       if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
     };
   }
