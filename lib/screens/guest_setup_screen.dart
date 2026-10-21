@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../main.dart';
 import '../services/guest_service.dart';
 import '../utils/l10n.dart';
 import 'dashboard_screen.dart';
 
-/// หน้าตั้งชื่อผู้ใช้ครั้งแรก (โหมดผู้ใช้ทั่วไป) — ชื่อนี้คือ ID พื้นที่ข้อมูล
 class GuestSetupScreen extends StatefulWidget {
   const GuestSetupScreen({super.key});
 
@@ -16,17 +16,109 @@ class GuestSetupScreen extends StatefulWidget {
 class _GuestSetupScreenState extends State<GuestSetupScreen> {
   final _controller = TextEditingController();
   bool _busy = false;
+  bool _isRestoring = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showFirstTimeAdviceDialog();
+    });
+  }
+
+  void _showFirstTimeAdviceDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.amber),
+            const SizedBox(width: 8),
+            Expanded(child: Text(T.get('guestIdAdviceTitle'))),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              T.get('guestIdAdviceIntro'),
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(ctx).colorScheme.outlineVariant,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    GuestService.guestId,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.copy,
+                        size: 18, color: Theme.of(ctx).colorScheme.primary),
+                    onPressed: () {
+                      Clipboard.setData(
+                          ClipboardData(text: GuestService.guestId));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(T.get('guestIdCopied'))),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '💡 ${T.get('guestIdAdviceBody')}',
+              style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(T.get('guestIdAdviceDone')),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _start() async {
-    final name = _controller.text.trim();
-    if (name.isEmpty) {
+    final inputVal = _controller.text.trim();
+    if (inputVal.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(T.get('usernameEmpty'))),
+        SnackBar(
+            content: Text(_isRestoring
+                ? T.get('restoreGuestIdEmpty')
+                : T.get('usernameEmpty'))),
       );
       return;
     }
+
     setState(() => _busy = true);
-    await GuestService.setUsername(name);
+
+    if (_isRestoring) {
+      await GuestService.setCustomGuestId(inputVal);
+      await GuestService.restoreCustomSettings();
+    } else {
+      await GuestService.setUsername(inputVal);
+    }
+
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const DashboardScreen()),
@@ -48,7 +140,6 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // ตัวกระปุกเงินเดิมของแอป
                     SizedBox(
                       width: 96,
                       height: 84,
@@ -73,25 +164,27 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                               borderRadius: BorderRadius.circular(28),
                             ),
                           ),
-                          Positioned(
+                          const Positioned(
                             top: 18,
                             left: 12,
-                            child: Container(
+                            child: SizedBox(
                                 width: 7,
                                 height: 7,
-                                decoration: const BoxDecoration(
-                                    color: Colors.amber,
-                                    shape: BoxShape.circle)),
+                                child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                        color: Colors.amber,
+                                        shape: BoxShape.circle))),
                           ),
-                          Positioned(
+                          const Positioned(
                             top: 18,
                             right: 12,
-                            child: Container(
+                            child: SizedBox(
                                 width: 7,
                                 height: 7,
-                                decoration: const BoxDecoration(
-                                    color: Colors.amber,
-                                    shape: BoxShape.circle)),
+                                child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                        color: Colors.amber,
+                                        shape: BoxShape.circle))),
                           ),
                         ],
                       ),
@@ -107,7 +200,9 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      T.get('guestTagline'),
+                      _isRestoring
+                          ? T.get('restoreTagline')
+                          : T.get('guestTagline'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -128,10 +223,14 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                       controller: _controller,
                       textInputAction: TextInputAction.done,
                       onSubmitted: (_) => _start(),
-                      maxLength: 30,
+                      maxLength: _isRestoring ? 50 : 30,
                       decoration: InputDecoration(
-                        labelText: T.get('usernameLabel'),
-                        prefixIcon: const Icon(Icons.person_outline),
+                        labelText: _isRestoring
+                            ? T.get('restoreGuestIdLabel')
+                            : T.get('usernameLabel'),
+                        prefixIcon: Icon(_isRestoring
+                            ? Icons.vpn_key
+                            : Icons.person_outline),
                         counterText: '',
                       ),
                     ),
@@ -153,9 +252,26 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                                 child:
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : Text(T.get('startButton'),
+                            : Text(
+                                _isRestoring
+                                    ? T.get('restoreButton')
+                                    : T.get('startButton'),
                                 style: const TextStyle(
                                     fontSize: 15, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _isRestoring = !_isRestoring;
+                          _controller.clear();
+                        });
+                      },
+                      child: Text(
+                        _isRestoring
+                            ? T.get('restoreSwitchBack')
+                            : T.get('restoreSwitchTo'),
                       ),
                     ),
                   ],

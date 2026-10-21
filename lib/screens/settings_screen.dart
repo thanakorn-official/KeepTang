@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 import '../main.dart';
 import '../services/guest_service.dart';
 import '../utils/l10n.dart';
+import 'splash_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -247,6 +249,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'app_category_icon_codes', jsonEncode(_categoryIconCodes));
     await prefs.setString(
         'app_category_color_values', jsonEncode(_categoryColorValues));
+    await GuestService.saveCustomSettings();
   }
 
   Future<void> _savePayments() async {
@@ -256,6 +259,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'app_payment_icon_codes', jsonEncode(_paymentIconCodes));
     await prefs.setString(
         'app_payment_color_values', jsonEncode(_paymentColorValues));
+    await GuestService.saveCustomSettings();
   }
 
   void _showCategoryDialog(StateSetter setModalState, {String? oldCategory}) {
@@ -804,6 +808,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {});
   }
 
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(T.get('signOutConfirmTitle')),
+        content: Text(T.get('signOutConfirmContent')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(T.get('cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(T.get('signOutConfirm')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await GuestService.signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SplashScreen()),
+      (_) => false,
+    );
+  }
+
   Widget _buildGuestCard() {
     final name = GuestService.username ?? '';
     final initial = name.isNotEmpty ? name.characters.first.toUpperCase() : '?';
@@ -825,8 +857,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text(T.get('guestMode'),
                 style: const TextStyle(color: Colors.grey, fontSize: 13)),
             const SizedBox(height: 2),
-            Text('${T.get('guestIdLabel')} ${GuestService.guestId}',
-                style: const TextStyle(color: Colors.grey, fontSize: 11)),
+            InkWell(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: GuestService.guestId));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(T.get('guestIdCopied'))),
+                );
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                        '${T.get('guestIdLabel')} ${GuestService.guestId}',
+                        style:
+                            const TextStyle(color: Colors.grey, fontSize: 11)),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.copy, size: 12, color: Colors.grey),
+                ],
+              ),
+            ),
           ],
         ),
         trailing: IconButton(
@@ -858,6 +909,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               _buildGuestCard(),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _signOut,
+                icon: const Icon(Icons.logout),
+                label: Text(T.get('signOut')),
+              ),
               const SizedBox(height: 16),
               Card(
                 elevation: 2,

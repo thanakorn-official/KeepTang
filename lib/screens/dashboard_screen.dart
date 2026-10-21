@@ -344,42 +344,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
               title: Text(title,
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.bold)),
-              contentPadding: const EdgeInsets.only(top: 12),
-              content: SingleChildScrollView(
+              contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              content: SizedBox(
+                width: double.maxFinite,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: items.entries.map((entry) {
-                    return CheckboxListTile(
-                      title: Text(entry.value),
-                      value: tempSelected.contains(entry.key),
-                      activeColor: Theme.of(context).colorScheme.primary,
-                      onChanged: (bool? checked) {
-                        setDialogState(() {
-                          if (checked == true) {
-                            tempSelected.add(entry.key);
-                          } else {
-                            tempSelected.remove(entry.key);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${tempSelected.length} / ${items.length}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 6),
+                        itemBuilder: (context, index) {
+                          final entry = items.entries.elementAt(index);
+                          final isSelected = tempSelected.contains(entry.key);
+                          return Material(
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            child: CheckboxListTile(
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              controlAffinity: ListTileControlAffinity.leading,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              title: Text(entry.value,
+                                  style: TextStyle(
+                                      fontWeight: isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.normal)),
+                              value: isSelected,
+                              activeColor:
+                                  Theme.of(context).colorScheme.primary,
+                              onChanged: (bool? checked) {
+                                setDialogState(() {
+                                  if (checked == true) {
+                                    tempSelected.add(entry.key);
+                                  } else {
+                                    tempSelected.remove(entry.key);
+                                  }
+                                });
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
               actions: [
                 TextButton(
                   onPressed: () {
                     setDialogState(() {
-                      if (tempSelected.length == items.length) {
-                        tempSelected.clear();
-                      } else {
-                        tempSelected.addAll(items.keys);
-                      }
+                      tempSelected.addAll(items.keys);
                     });
                   },
-                  child: Text(tempSelected.length == items.length
-                      ? 'เอาออกทั้งหมด'
-                      : 'เลือกทั้งหมด'),
+                  child: Text(T.get('selectAll')),
+                ),
+                TextButton(
+                  onPressed: () => setDialogState(tempSelected.clear),
+                  child: Text(T.get('clearAll')),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
@@ -390,7 +426,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onConfirm(tempSelected);
                     Navigator.pop(ctx);
                   },
-                  child: const Text('ตกลง'),
+                  child: Text(T.get('apply')),
                 ),
               ],
             );
@@ -889,6 +925,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required IconData icon,
     required VoidCallback onTap,
     bool isActive = false,
+    int selectedCount = 0,
   }) {
     return Container(
       margin: const EdgeInsets.only(right: 8),
@@ -896,7 +933,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
               color: isActive
                   ? Theme.of(context).colorScheme.primaryContainer
@@ -926,8 +963,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         isActive ? Theme.of(context).colorScheme.primary : null,
                   )),
               const SizedBox(width: 4),
-              Icon(Icons.arrow_drop_down,
-                  size: 16,
+              if (isActive) ...[
+                const SizedBox(width: 6),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 18),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$selectedCount',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 2),
+              Icon(Icons.keyboard_arrow_down,
+                  size: 18,
                   color:
                       isActive ? Theme.of(context).colorScheme.primary : null),
             ],
@@ -937,91 +996,148 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  String _filterSummary(int selectedCount) =>
+      selectedCount == 0 ? T.get('all') : '$selectedCount ${T.get('selected')}';
+
+  void _showTypeFilter() {
+    _showMultiSelectDialog(
+      title: T.get('selectType'),
+      items: {'income': T.get('income'), 'expense': T.get('expense')},
+      selectedItems: _selectedTypes,
+      onConfirm: (value) => setState(() => _selectedTypes = value),
+    );
+  }
+
+  void _showCategoryFilter() {
+    final items = <String, String>{
+      for (final category in _categoryIcons.keys) category: T.get(category),
+      'transfer': 'โอนเงิน',
+    };
+    _showMultiSelectDialog(
+      title: T.get('selectCategory'),
+      items: items,
+      selectedItems: _selectedCategories,
+      onConfirm: (value) => setState(() {
+        _selectedCategories = value.length == items.length ? <String>{} : value;
+      }),
+    );
+  }
+
+  void _showPaymentFilter() {
+    final items = <String, String>{
+      for (final payment in _paymentIcons.keys) payment: T.get(payment),
+    };
+    _showMultiSelectDialog(
+      title: T.get('selectPayment'),
+      items: items,
+      selectedItems: _selectedPayments,
+      onConfirm: (value) => setState(() {
+        _selectedPayments = value.length == items.length ? <String>{} : value;
+      }),
+    );
+  }
+
+  void _showFilterPanel() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text(T.get('filters'),
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              ListTile(
+                leading: const Icon(Icons.filter_list),
+                title: Text(T.get('filterType')),
+                subtitle: Text(_filterSummary(
+                    _selectedTypes.length == 2 ? 0 : _selectedTypes.length)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showTypeFilter();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.category_outlined),
+                title: Text(T.get('filterCategory')),
+                subtitle: Text(_filterSummary(_selectedCategories.length)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showCategoryFilter();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.account_balance_wallet_outlined),
+                title: Text(T.get('filterPayment')),
+                subtitle: Text(_filterSummary(_selectedPayments.length)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showPaymentFilter();
+                },
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _selectedTypes = {'income', 'expense'};
+                    _selectedCategories.clear();
+                    _selectedPayments.clear();
+                  });
+                  Navigator.pop(sheetContext);
+                },
+                icon: const Icon(Icons.restart_alt),
+                label: Text(T.get('clearFilters')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFilterBar() {
+    final activeSelections =
+        (_selectedTypes.length == 2 ? 0 : _selectedTypes.length) +
+            _selectedCategories.length +
+            _selectedPayments.length;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           _buildDropdown(
             _groupType,
             ['daily', 'weekly', 'monthly', 'yearly', 'none'],
             Icons.date_range,
-            (val) => setState(() => _groupType = val!),
-          ),
-          _buildMultiSelectButton(
-            label: 'ประเภท',
-            icon: Icons.filter_list,
-            isActive: _selectedTypes.isNotEmpty && _selectedTypes.length < 2,
-            onTap: () {
-              _showMultiSelectDialog(
-                title: 'เลือกประเภท',
-                items: {'income': T.get('income'), 'expense': T.get('expense')},
-                selectedItems: _selectedTypes,
-                onConfirm: (val) => setState(() => _selectedTypes = val),
-              );
-            },
-          ),
-          _buildMultiSelectButton(
-            label: 'หมวดหมู่',
-            icon: Icons.category,
-            isActive: _selectedCategories.isNotEmpty &&
-                _selectedCategories.length < (_categoryIcons.length + 1),
-            onTap: () {
-              Map<String, String> catItems = {};
-              for (var cat in _categoryIcons.keys) {
-                catItems[cat] = T.get(cat);
-              }
-              catItems['transfer'] = 'โอนเงิน';
-
-              _showMultiSelectDialog(
-                title: 'กรองหมวดหมู่',
-                items: catItems,
-                selectedItems: _selectedCategories,
-                onConfirm: (val) {
-                  setState(() {
-                    if (val.length == catItems.length) {
-                      _selectedCategories
-                          .clear(); // เคลียร์เพื่อบอกว่าเอาทั้งหมด
-                    } else {
-                      _selectedCategories = val;
-                    }
-                  });
-                },
-              );
-            },
-          ),
-          _buildMultiSelectButton(
-            label: 'บัญชี/กระเป๋า',
-            icon: Icons.payment,
-            isActive: _selectedPayments.isNotEmpty &&
-                _selectedPayments.length < _paymentIcons.length,
-            onTap: () {
-              Map<String, String> payItems = {};
-              for (var pay in _paymentIcons.keys) {
-                payItems[pay] = T.get(pay);
-              }
-              _showMultiSelectDialog(
-                title: 'กรองบัญชีที่ชำระ',
-                items: payItems,
-                selectedItems: _selectedPayments,
-                onConfirm: (val) {
-                  setState(() {
-                    if (val.length == payItems.length) {
-                      _selectedPayments.clear(); // เคลียร์เพื่อบอกว่าเอาทั้งหมด
-                    } else {
-                      _selectedPayments = val;
-                    }
-                  });
-                },
-              );
-            },
+            (value) => setState(() => _groupType = value!),
           ),
           _buildDropdown(
             _sortOrder,
             ['newest', 'oldest', 'highest', 'lowest'],
             Icons.sort,
-            (val) => setState(() => _sortOrder = val!),
+            (value) => setState(() => _sortOrder = value!),
+          ),
+          _buildMultiSelectButton(
+            label: T.get('filters'),
+            icon: Icons.tune,
+            isActive: activeSelections > 0,
+            selectedCount: activeSelections,
+            onTap: _showFilterPanel,
           ),
         ],
       ),
@@ -1545,6 +1661,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildTransactionItem(BuildContext context, TransactionModel tx) {
     final formattedAmount = NumberFormat('#,##0.00').format(tx.amount);
     final formattedDate = DateFormat('dd/MM/yyyy HH:mm').format(tx.date);
+    final amountColor = tx.isExpense ? Colors.red : Colors.green;
 
     final isCategoryValid =
         _categoryIcons.containsKey(tx.category) || tx.category == 'transfer';
@@ -1621,12 +1738,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
-            trailing: Text(
-              '${tx.isExpense ? '-' : '+'}$formattedAmount ฿',
-              style: TextStyle(
-                  color: tx.isExpense ? Colors.red : Colors.green,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  tx.isExpense ? Icons.arrow_downward : Icons.arrow_upward,
+                  color: amountColor,
+                  size: 18,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${tx.isExpense ? '-' : '+'}$formattedAmount ฿',
+                  style: TextStyle(
+                      color: amountColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16),
+                ),
+              ],
             ),
           ),
         ),
