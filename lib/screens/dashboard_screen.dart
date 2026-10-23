@@ -123,11 +123,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _groupType = 'monthly';
   String _sortOrder = 'newest';
 
-
-  Set<String> _selectedTypes = {
-    'income',
-    'expense'
-  };
+  Set<String> _selectedTypes = {'income', 'expense'};
   Set<String> _selectedCategories = {};
   Set<String> _selectedPayments = {};
 
@@ -162,6 +158,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Icons.trending_up;
       case 'อื่นๆ':
         return Icons.category;
+      case 'ไม่ระบุ':
+        return Icons.help_outline;
       default:
         return Icons.label;
     }
@@ -192,6 +190,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Colors.teal;
       case 'อื่นๆ':
         return Colors.blueGrey;
+      case 'ไม่ระบุ':
+        return Colors.grey;
       default:
         return Colors.blueGrey;
     }
@@ -207,6 +207,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Icons.account_balance_wallet;
       case 'paotang':
         return Icons.wallet;
+      case 'ไม่ระบุ':
+        return Icons.account_balance_wallet_outlined;
       default:
         return Icons.payment;
     }
@@ -222,6 +224,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Colors.orange;
       case 'paotang':
         return Colors.lightBlue;
+      case 'ไม่ระบุ':
+        return Colors.grey;
       default:
         return Colors.blueGrey;
     }
@@ -327,14 +331,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _paymentColors[payment] ?? _getDefaultPaymentColor(payment);
   }
 
-
   Future<void> _showMultiSelectDialog({
     required String title,
     required Map<String, String> items,
     required Set<String> selectedItems,
     required ValueChanged<Set<String>> onConfirm,
   }) async {
-
     Set<String> tempSelected = Set.from(selectedItems);
     if (tempSelected.isEmpty && items.isNotEmpty) {
       tempSelected.addAll(items.keys);
@@ -511,7 +513,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _availableColors.map((color) {
-                      final isSelected = selectedColor.toARGB32() == color.toARGB32();
+                      final isSelected =
+                          selectedColor.toARGB32() == color.toARGB32();
                       return GestureDetector(
                         onTap: () =>
                             setDialogState(() => selectedColor = color),
@@ -651,7 +654,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _availableColors.map((color) {
-                      final isSelected = selectedColor.toARGB32() == color.toARGB32();
+                      final isSelected =
+                          selectedColor.toARGB32() == color.toARGB32();
                       return GestureDetector(
                         onTap: () =>
                             setDialogState(() => selectedColor = color),
@@ -902,7 +906,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+        color: Theme.of(context)
+            .colorScheme
+            .primaryContainer
+            .withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(20),
       ),
       child: DropdownButtonHideUnderline(
@@ -927,7 +934,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-
 
   Widget _buildMultiSelectButton({
     required String label,
@@ -1472,9 +1478,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-
   bool _isMatchFilters(TransactionModel tx) {
-
     if (tx.isExpense && !_selectedTypes.contains('expense')) {
       return false;
     }
@@ -1482,12 +1486,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return false;
     }
 
-
     if (_selectedCategories.isNotEmpty &&
         !_selectedCategories.contains(tx.category)) {
       return false;
     }
-
 
     if (_selectedPayments.isNotEmpty &&
         !_selectedPayments.contains(tx.paymentMethod)) {
@@ -1683,7 +1685,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildTransactionItem(BuildContext context, TransactionModel tx) {
     final locale = languageNotifier.value == 'th' ? 'th' : 'en';
     final formattedAmount = NumberFormat('#,##0.00', locale).format(tx.amount);
-    final formattedDate = DateFormat('dd/MM/yyyy HH:mm', locale).format(tx.date);
+    final formattedDate =
+        DateFormat('dd/MM/yyyy HH:mm', locale).format(tx.date);
     final amountColor = tx.isExpense ? Colors.red : Colors.green;
 
     final isCategoryValid =
@@ -1954,4 +1957,3 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
-

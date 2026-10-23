@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../main.dart';
 import '../services/guest_service.dart';
@@ -87,6 +88,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Icons.card_membership,
     Icons.store,
   ];
+
+  CollectionReference get _transactionsCollection => FirebaseFirestore.instance
+      .collection('guests')
+      .doc(GuestService.guestId)
+      .collection('transactions');
+
+  Future<void> _updateTransactionsCategory(
+      String oldCategory, String newCategory) async {
+    final querySnapshot = await _transactionsCollection
+        .where('category', isEqualTo: oldCategory)
+        .get();
+
+    if (querySnapshot.docs.isNotEmpty) {
+      final batch = FirebaseFirestore.instance.batch();
+      for (var doc in querySnapshot.docs) {
+        batch.update(doc.reference, {'category': newCategory});
+      }
+      await batch.commit();
+    }
+  }
+
+  Future<void> _updateTransactionsPayment(
+      String oldPayment, String newPayment) async {
+    final querySnapshot = await _transactionsCollection
+        .where('paymentMethod', isEqualTo: oldPayment)
+        .get();
+
+    if (querySnapshot.docs.isNotEmpty) {
+      final batch = FirebaseFirestore.instance.batch();
+      for (var doc in querySnapshot.docs) {
+        batch.update(doc.reference, {'paymentMethod': newPayment});
+      }
+      await batch.commit();
+    }
+  }
 
   @override
   void initState() {
@@ -342,7 +378,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _availableColors.map((color) {
-                      final isSelected = selectedColor.toARGB32() == color.toARGB32();
+                      final isSelected =
+                          selectedColor.toARGB32() == color.toARGB32();
                       return GestureDetector(
                         onTap: () =>
                             setDialogState(() => selectedColor = color),
@@ -389,6 +426,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (oldCategory != text) {
                           _categoryIconCodes.remove(oldCategory);
                           _categoryColorValues.remove(oldCategory);
+                          _updateTransactionsCategory(oldCategory!, text);
                         }
                       } else if (!_categories.contains(text)) {
                         _categories.add(text);
@@ -483,7 +521,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _availableColors.map((color) {
-                      final isSelected = selectedColor.toARGB32() == color.toARGB32();
+                      final isSelected =
+                          selectedColor.toARGB32() == color.toARGB32();
                       return GestureDetector(
                         onTap: () =>
                             setDialogState(() => selectedColor = color),
@@ -523,16 +562,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: () async {
                   final inputText = controller.text.trim();
                   final text = isEditing && inputText == initialPaymentLabel
-                      ? oldPayment
+                      ? oldPayment!
                       : inputText;
                   if (text.isNotEmpty) {
                     setState(() {
                       if (isEditing) {
-                        final index = _payments.indexOf(oldPayment);
+                        final index = _payments.indexOf(oldPayment!);
                         if (index != -1) _payments[index] = text;
                         if (oldPayment != text) {
                           _paymentIconCodes.remove(oldPayment);
                           _paymentColorValues.remove(oldPayment);
+                          _updateTransactionsPayment(oldPayment, text);
                         }
                       } else if (!_payments.contains(text)) {
                         _payments.add(text);
@@ -560,7 +600,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(T.get('deleteConfirmTitle')),
-        content: Text('${T.get('deleteConfirmContent')} ${T.get(category)}'),
+        content: Text('${T.get('deleteConfirmContent')}${T.get(category)}'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -582,7 +622,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(T.get('deleteConfirmTitle')),
-        content: Text('${T.get('deleteConfirmContent')} ${T.get(payment)}'),
+        content: Text('${T.get('deleteConfirmContent')}${T.get(payment)}'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -630,6 +670,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _categoryColorValues.remove(cat);
                       });
                       await _saveCategories();
+                      await _updateTransactionsCategory(cat, 'ไม่ระบุ');
                       setModalState(() {});
                     },
                     background: Container(
@@ -719,6 +760,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _paymentColorValues.remove(pay);
                       });
                       await _savePayments();
+                      await _updateTransactionsPayment(pay, 'ไม่ระบุ');
                       setModalState(() {});
                     },
                     background: Container(
@@ -878,7 +920,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Flexible(
                     child: Text(
-                        '${T.get('guestIdLabel')} ${GuestService.guestId}',
+                        '${T.get('guestIdLabel')}${GuestService.guestId}',
                         style:
                             const TextStyle(color: Colors.grey, fontSize: 11)),
                   ),
@@ -1033,4 +1075,3 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
-
