@@ -25,7 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<TransactionModel> _cachedParsedTransactions = [];
   List<TransactionModel> _cachedAvailableTransactions = [];
   final Map<String, TransactionModel> _cachedTransactionsById = {};
-  String _cachedPendingDeleteKey = '';
+  String? _cachedPendingDeleteKey;
   List<TransactionModel>? _cachedAccountSource;
   String? _cachedAccountScope;
   List<TransactionModel> _cachedAccountTransactions = [];
@@ -2347,7 +2347,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
       confirmDismiss: (direction) async {
-        if (direction == DismissDirection.startToEnd) return true;
+        if (direction == DismissDirection.startToEnd) {
+          await _hideTransactionFromDashboard(
+            context,
+            tx,
+            hidden: !isHidden,
+          );
+          return false;
+        }
         return await showDialog<bool>(
               context: context,
               builder: (dialogContext) => AlertDialog(
@@ -2367,13 +2374,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ) ??
             false;
       },
-      onDismissed: (direction) {
-        if (direction == DismissDirection.startToEnd) {
-          _hideTransactionFromDashboard(context, tx, hidden: !isHidden);
-        } else {
-          _handleDelete(context, tx);
-        }
-      },
+      onDismissed: (_) => _handleDelete(context, tx),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onLongPress: () => _toggleTransactionSelection(tx),
@@ -2900,7 +2901,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             data['id'] = doc.id;
                             return TransactionModel.fromMap(data);
                           }).toList();
-                          _cachedPendingDeleteKey = '\u0000';
+                          _cachedPendingDeleteKey = null;
                         }
                         final pendingDeleteKey =
                             (_pendingDeleteIds.toList()..sort()).join('\u0000');
