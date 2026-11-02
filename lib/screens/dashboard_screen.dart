@@ -762,16 +762,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 16),
                     TextField(
                         controller: amountController,
-                        decoration: const InputDecoration(
-                            labelText: 'จำนวนเงิน',
-                            border: OutlineInputBorder()),
+                        decoration: InputDecoration(
+                            labelText: T.get('amountLabel'),
+                            border: const OutlineInputBorder()),
                         keyboardType: TextInputType.number),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       initialValue: fromPayment,
-                      decoration: const InputDecoration(
-                          labelText: 'จากบัญชี (ต้นทาง)',
-                          border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                          labelText: T.get('fromAccount'),
+                          border: const OutlineInputBorder()),
                       items: _paymentIcons.keys.map((method) {
                         return DropdownMenuItem(
                           value: method,
@@ -791,9 +791,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       initialValue: toPayment,
-                      decoration: const InputDecoration(
-                          labelText: 'เข้าบัญชี (ปลายทาง)',
-                          border: OutlineInputBorder()),
+                      decoration: InputDecoration(
+                          labelText: T.get('toAccount'),
+                          border: const OutlineInputBorder()),
                       items: _paymentIcons.keys.map((method) {
                         return DropdownMenuItem(
                           value: method,
@@ -812,9 +812,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(height: 16),
                     TextField(
                         controller: noteController,
-                        decoration: const InputDecoration(
-                            labelText: 'บันทึกช่วยจำ (ไม่บังคับ)',
-                            border: OutlineInputBorder())),
+                        decoration: InputDecoration(
+                            labelText: T.get('optionalNote'),
+                            border: const OutlineInputBorder())),
                     const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
@@ -833,7 +833,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           _transactionsCollection.add({
                             'title': noteController.text.isNotEmpty
                                 ? noteController.text
-                                : 'โอนออกไป ${T.get(toPayment)}',
+                                : '${T.get('transferredOut')} ${T.get(toPayment)}',
                             'amount':
                                 double.tryParse(amountController.text) ?? 0.0,
                             'date': DateTime.now().toIso8601String(),
@@ -845,7 +845,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           _transactionsCollection.add({
                             'title': noteController.text.isNotEmpty
                                 ? noteController.text
-                                : 'รับโอนจาก ${T.get(fromPayment)}',
+                                : '${T.get('transferredIn')} ${T.get(fromPayment)}',
                             'amount':
                                 double.tryParse(amountController.text) ?? 0.0,
                             'date': DateTime.now().toIso8601String(),

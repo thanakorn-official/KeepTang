@@ -1,4 +1,4 @@
-# Dart / Flutter
+# Flutter / Dart
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
@@ -8,49 +8,112 @@
 /build/
 /coverage/
 **/doc/api/
-**/ios/Flutter/.last_build_id
 app.*.symbols
 app.*.map.json
 
-# Firebase configuration (generate locally with FlutterFire CLI)
-/lib/firebase_options.dart
-/android/app/google-services.json
-/ios/GoogleService-Info.plist
-/macos/GoogleService-Info.plist
-
-# Signing keys and local environment files
+# Android / Gradle outputs
+.gradle/
+**/.gradle/
+**/local.properties
+/android/app/debug/
+/android/app/profile/
+/android/app/release/
+/android/app/build/
+/android/app/.cxx/
+/android/app/.externalNativeBuild/
+*.hprof
 *.jks
 *.keystore
 key.properties
+release.properties
+
+# Xcode / Apple platform outputs
+**/Pods/
+**/DerivedData/
+**/*.xcuserstate
+**/xcuserdata/
+**/*.dSYM/
+/ios/Flutter/.last_build_id
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+/ios/Flutter/ephemeral/
+/macos/Flutter/ephemeral/
+
+# Generated desktop platform files
+/linux/flutter/ephemeral/
+/windows/flutter/ephemeral/
+
+# Firebase client configuration (generate locally with FlutterFire CLI)
+/lib/firebase_options.dart
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Secrets, credentials, signing certificates, and local environment files
 .env
 .env.*
 !.env.example
+secrets/
+credentials/
+**/service-account*.json
+**/serviceAccount*.json
+**/firebase-adminsdk-*.json
+**/*credentials*.json
+**/*credentials*.yaml
+**/*credentials*.yml
+**/*secrets*.json
+**/*secret*.json
+**/*api-key*.json
+**/*apikey*.json
+**/*api_key*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.crt
 
-# IDEs and editor files
+# Node tooling (for web tooling, if added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# IDEs and editor state
 .idea/
 .vscode/
 *.iml
 *.ipr
 *.iws
 .fleet/
+.history/
+.widget_preview/
 
-# Local screenshots (keep curated README images under assets/screenshots)
-/screenshot/
-
-# Operating systems and temporary files
+# Operating systems, logs, backups, and temporary files
 .DS_Store
 Thumbs.db
+Desktop.ini
+*.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*.tmp
+*.temp
+*.db
+*.sqlite
+*.sqlite3
 *.swp
 *.swo
-*.tmp
-*.log
-*.class
-*.pyc
+*.bak
+*.orig
+*.rej
+*~
 
-# Platform build outputs
-/android/app/debug/
-/android/app/profile/
-/android/app/release/
-/.buildlog/
-/.history/
-/.widget_preview/
+# Local screenshots are ignored by default. Only curated public showcase
+# captures with these names may be committed for the README.
+/screenshot/*
+!/screenshot/
+!/screenshot/dashboard.png
+!/screenshot/transactions.png
+!/screenshot/filters.png
+!/screenshot/settings.png
