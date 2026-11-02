@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+
+import 'package:flutter/material.dart';
+
 import '../main.dart';
 import '../services/guest_service.dart';
 import '../utils/l10n.dart';
@@ -14,22 +16,30 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _showLoading = false;
+
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(milliseconds: 2500), () async {
-      // สุ่ม Guest ID ไม่ซ้ำกันให้เครื่องนี้ (ถ้ายังไม่มี) แล้วค่อยถามชื่อผู้ใช้
-      await GuestService.ensureGuest();
-      await GuestService.restoreCustomSettings();
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => GuestService.hasUsername
-              ? const DashboardScreen()
-              : const GuestSetupScreen(),
-        ),
-      );
-    });
+    _startSplash();
+  }
+
+  Future<void> _startSplash() async {
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    if (!mounted) return;
+    setState(() => _showLoading = true);
+
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
+    await GuestService.ensureGuest();
+    await GuestService.restoreCustomSettings();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => GuestService.hasUsername
+            ? const DashboardScreen()
+            : const GuestSetupScreen(),
+      ),
+    );
   }
 
   @override
@@ -37,87 +47,123 @@ class _SplashScreenState extends State<SplashScreen> {
     return ValueListenableBuilder<String>(
       valueListenable: languageNotifier,
       builder: (context, lang, child) {
+        final isSystemDark =
+            MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+        final logoColor = isSystemDark ? Colors.white : Colors.black;
+        final splashBackground =
+            isSystemDark ? const Color(0xFF121212) : Colors.white;
+
         return Scaffold(
-          backgroundColor: Theme.of(context).colorScheme.surface,
+          backgroundColor: splashBackground,
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 90,
-                      height: 90,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 6,
-                        color: Theme.of(context).colorScheme.primary,
-                        backgroundColor:
-                            Theme.of(context).colorScheme.primaryContainer,
-                      ),
-                    ),
-                    SizedBox(
-                      width: 44,
-                      height: 38,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          const Positioned(
-                              top: -8,
-                              left: 2,
-                              child: Icon(Icons.change_history,
-                                  size: 20, color: Colors.black87)),
-                          const Positioned(
-                              top: -8,
-                              right: 2,
-                              child: Icon(Icons.change_history,
-                                  size: 20, color: Colors.black87)),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black87,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 450),
+                  switchInCurve: Curves.easeOutBack,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(scale: animation, child: child),
+                  ),
+                  child: _showLoading
+                      ? SizedBox(
+                          key: const ValueKey('cat-loading'),
+                          width: 184,
+                          height: 184,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 144,
+                                height: 144,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 5,
+                                  color: logoColor,
+                                  backgroundColor:
+                                      logoColor.withValues(alpha: 0.16),
+                                ),
+                              ),
+                              Image.asset(
+                                'assets/splash_cat_face.png',
+                                width: 84,
+                                height: 84,
+                                fit: BoxFit.contain,
+                                color: logoColor,
+                                semanticLabel: T.get('appTitle'),
+                              ),
+                            ],
                           ),
-                          Positioned(
-                              top: 14,
-                              left: 8,
-                              child: Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: const BoxDecoration(
-                                      color: Colors.amber,
-                                      shape: BoxShape.circle))),
-                          Positioned(
-                              top: 14,
-                              right: 8,
-                              child: Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: const BoxDecoration(
-                                      color: Colors.amber,
-                                      shape: BoxShape.circle))),
-                        ],
-                      ),
-                    ),
-                  ],
+                        )
+                      : SizedBox(
+                          key: const ValueKey('bill-cat-logo'),
+                          width: 184,
+                          height: 184,
+                          child: Stack(
+                            clipBehavior: Clip.hardEdge,
+                            children: [
+                              Positioned(
+                                top: -30,
+                                left: 0,
+                                right: 0,
+                                child: TweenAnimationBuilder<double>(
+                                  tween: Tween(begin: 0.34, end: 0),
+                                  duration: const Duration(milliseconds: 850),
+                                  curve: Curves.easeOutBack,
+                                  builder: (context, offset, child) =>
+                                      Transform.translate(
+                                    offset: Offset(0, offset * 100),
+                                    child: child,
+                                  ),
+                                  child: Image.asset(
+                                    'assets/splash_cat_peek.png',
+                                    width: 120,
+                                    height: 120,
+                                    fit: BoxFit.contain,
+                                    color: logoColor,
+                                  ),
+                                ),
+                              ),
+                              Positioned.fill(
+                                child: Image.asset(
+                                  'assets/splash_bill.png',
+                                  fit: BoxFit.contain,
+                                  color: logoColor,
+                                  semanticLabel: T.get('appTitle'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 18),
                 Text(
                   T.get('appTitle'),
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w800,
-                    color: Theme.of(context).colorScheme.onSurface,
+                    color: logoColor,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  T.get('loading'),
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: _showLoading
+                      ? Padding(
+                          key: const ValueKey('loading-text'),
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            T.get('loading'),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: logoColor.withValues(alpha: 0.72),
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(
+                          key: ValueKey('no-loading-text'),
+                        ),
                 ),
               ],
             ),
