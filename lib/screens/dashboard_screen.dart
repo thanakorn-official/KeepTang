@@ -7,7 +7,6 @@ import 'dart:convert';
 
 import '../models/transaction_model.dart';
 import '../main.dart';
-import '../services/export_service.dart';
 import '../services/guest_service.dart';
 import '../utils/l10n.dart';
 import 'settings_screen.dart';
@@ -22,6 +21,22 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final ScrollController _dashboardScrollController = ScrollController();
   late final Stream<QuerySnapshot> _transactionsStream;
+  QuerySnapshot? _cachedSnapshot;
+  List<TransactionModel> _cachedParsedTransactions = [];
+  List<TransactionModel> _cachedAvailableTransactions = [];
+  final Map<String, TransactionModel> _cachedTransactionsById = {};
+  String _cachedPendingDeleteKey = '';
+  List<TransactionModel>? _cachedAccountSource;
+  String? _cachedAccountScope;
+  List<TransactionModel> _cachedAccountTransactions = [];
+  List<TransactionModel>? _cachedGroupSource;
+  String? _cachedGroupType;
+  List<TransactionModel> _cachedGroupTransactions = [];
+  List<TransactionModel>? _cachedVisibleSource;
+  String? _cachedVisibleKey;
+  List<TransactionModel> _cachedVisibleTransactions = [];
+  List<dynamic> _cachedVisibleListItems = [];
+  List<TransactionModel> _cachedFilteredScopeTransactions = [];
   int _selectedPaymentPage = 0;
   double _accountSwipeDistance = 0;
   int _overviewSlideDirection = 1;
@@ -122,6 +137,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ];
 
   final Set<String> _pendingDeleteIds = {};
+  final Set<String> _selectedTransactionIds = {};
 
   CollectionReference get _transactionsCollection => FirebaseFirestore.instance
       .collection('guests')
@@ -134,6 +150,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Set<String> _selectedTypes = {'income', 'expense'};
   Set<String> _selectedCategories = {};
   Set<String> _selectedPayments = {};
+  bool _categoryFilterActive = false;
+  bool _paymentFilterActive = false;
 
   @override
   void initState() {
@@ -158,6 +176,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _selectedPaymentPage = targetIndex;
       _overviewSlideDirection = slideDirection;
       _selectedChartCategory = null;
+      _selectedTransactionIds.clear();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_dashboardScrollController.hasClients) {
@@ -425,140 +444,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Color _paymentColorOf(String payment) {
     if (!_paymentColors.containsKey(payment)) return Colors.red;
     return _paymentColors[payment] ?? _getDefaultPaymentColor(payment);
-  }
-
-  Future<void> _showMultiSelectDialog({
-    required String title,
-    required Map<String, String> items,
-    required Set<String> selectedItems,
-    required ValueChanged<Set<String>> onConfirm,
-    IconData Function(String key)? iconForItem,
-    Color Function(String key)? colorForItem,
-  }) async {
-    Set<String> tempSelected = Set.from(selectedItems);
-    if (tempSelected.isEmpty && items.isNotEmpty) {
-      tempSelected.addAll(items.keys);
-    }
-
-    await showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              title: Text(title,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold)),
-              contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${tempSelected.length} / ${items.length}',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 320),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 6),
-                        itemBuilder: (context, index) {
-                          final entry = items.entries.elementAt(index);
-                          final isSelected = tempSelected.contains(entry.key);
-                          return Material(
-                            color: isSelected
-                                ? Theme.of(context).colorScheme.primaryContainer
-                                : Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            child: CheckboxListTile(
-                              contentPadding:
-                                  const EdgeInsets.symmetric(horizontal: 8),
-                              controlAffinity: ListTileControlAffinity.leading,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              title: Row(
-                                children: [
-                                  if (iconForItem != null) ...[
-                                    Icon(
-                                      iconForItem(entry.key),
-                                      size: 20,
-                                      color: colorForItem?.call(entry.key) ??
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 10),
-                                  ],
-                                  Expanded(
-                                    child: Text(
-                                      entry.value,
-                                      style: TextStyle(
-                                        fontWeight: isSelected
-                                            ? FontWeight.w600
-                                            : FontWeight.normal,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              value: isSelected,
-                              activeColor:
-                                  Theme.of(context).colorScheme.primary,
-                              onChanged: (bool? checked) {
-                                setDialogState(() {
-                                  if (checked == true) {
-                                    tempSelected.add(entry.key);
-                                  } else {
-                                    tempSelected.remove(entry.key);
-                                  }
-                                });
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    setDialogState(() {
-                      tempSelected.addAll(items.keys);
-                    });
-                  },
-                  child: Text(T.get('selectAll')),
-                ),
-                TextButton(
-                  onPressed: () => setDialogState(tempSelected.clear),
-                  child: Text(T.get('clearAll')),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(T.get('cancel')),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    onConfirm(tempSelected);
-                    Navigator.pop(ctx);
-                  },
-                  child: Text(T.get('apply')),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   Future<void> _showQuickAddCategoryDialog(
@@ -1016,37 +901,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildDropdown(String value, List<String> items, IconData icon,
-      ValueChanged<String?> onChanged) {
+      ValueChanged<String?> onChanged,
+      {bool isActive = false}) {
     final currentValue = items.contains(value) ? value : items.first;
+    final colors = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .primaryContainer
-            .withValues(alpha: 0.5),
+        color: isActive
+            ? colors.primaryContainer
+            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(20),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: currentValue,
-          isDense: true,
-          icon: Padding(
-            padding: const EdgeInsets.only(left: 4.0),
-            child: Icon(icon, size: 16),
-          ),
-          style: TextStyle(
-            fontSize: 13,
-            color: Theme.of(context).colorScheme.onSurface,
-            fontWeight: FontWeight.bold,
-          ),
-          items: items
-              .map((val) =>
-                  DropdownMenuItem(value: val, child: Text(T.get(val))))
-              .toList(),
-          onChanged: onChanged,
+        border: Border.all(
+          color: isActive ? colors.primary : Colors.transparent,
         ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon,
+              size: 16,
+              color: isActive ? colors.primary : colors.onSurfaceVariant),
+          const SizedBox(width: 8),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: currentValue,
+              isDense: true,
+              borderRadius: BorderRadius.circular(16),
+              menuMaxHeight: 360,
+              icon: Icon(Icons.keyboard_arrow_down_rounded,
+                  color: colors.onSurfaceVariant),
+              style: TextStyle(
+                fontSize: 13,
+                color: colors.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+              items: items
+                  .map((val) =>
+                      DropdownMenuItem(value: val, child: Text(T.get(val))))
+                  .toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1127,120 +1025,361 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  String _filterSummary(int selectedCount) =>
-      selectedCount == 0 ? T.get('all') : '$selectedCount ${T.get('selected')}';
-
-  void _showTypeFilter() {
-    _showMultiSelectDialog(
-      title: T.get('selectType'),
-      items: {'income': T.get('income'), 'expense': T.get('expense')},
-      selectedItems: _selectedTypes,
-      onConfirm: (value) => setState(() => _selectedTypes = value),
-    );
-  }
-
-  void _showCategoryFilter() {
-    final items = <String, String>{
+  void _showFilterPanel() {
+    final categoryItems = <String, String>{
       for (final category in _categoryIcons.keys) category: T.get(category),
       'transfer': T.get('transfer'),
     };
-    _showMultiSelectDialog(
-      title: T.get('selectCategory'),
-      items: items,
-      selectedItems: _selectedCategories,
-      iconForItem: _iconOf,
-      colorForItem: _colorOf,
-      onConfirm: (value) => setState(() {
-        _selectedCategories = value.length == items.length ? <String>{} : value;
-      }),
-    );
-  }
-
-  void _showPaymentFilter() {
-    final items = <String, String>{
+    final paymentItems = <String, String>{
       for (final payment in _paymentIcons.keys) payment: T.get(payment),
     };
-    _showMultiSelectDialog(
-      title: T.get('selectPayment'),
-      items: items,
-      selectedItems: _selectedPayments,
-      iconForItem: _paymentIconOf,
-      colorForItem: _paymentColorOf,
-      onConfirm: (value) => setState(() {
-        _selectedPayments = value.length == items.length ? <String>{} : value;
-      }),
-    );
-  }
+    var draftTypes = Set<String>.from(_selectedTypes);
+    var draftCategories = Set<String>.from(_selectedCategories);
+    var draftPayments = Set<String>.from(_selectedPayments);
+    var draftCategoryFilterActive = _categoryFilterActive;
+    var draftPaymentFilterActive = _paymentFilterActive;
+    var showAllCategories = false;
+    var showAllPayments = false;
 
-  void _showFilterPanel() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setPanelState) {
+          final colors = Theme.of(sheetContext).colorScheme;
+
+          Widget selectionSection({
+            required String title,
+            required Map<String, String> items,
+            required Set<String> selectedItems,
+            required bool filterActive,
+            required bool showAll,
+            required ValueChanged<bool> onShowAllChanged,
+            required ValueChanged<bool> onFilterActiveChanged,
+            required IconData Function(String key) iconForItem,
+            required Color Function(String key) colorForItem,
+            required ValueChanged<Set<String>> onSelectionChanged,
+          }) {
+            final visibleItems = showAll
+                ? items.entries.toList()
+                : items.entries.take(5).toList();
+            final allSelected =
+                items.isNotEmpty && selectedItems.length == items.length;
+            final selectedCount = !filterActive || allSelected
+                ? items.length
+                : selectedItems.length;
+            final optionWidth =
+                (MediaQuery.sizeOf(sheetContext).width - 50) / 2;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(T.get('filters'),
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    icon: const Icon(Icons.close),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(title,
+                            style: Theme.of(sheetContext)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.surfaceContainerHighest
+                              .withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          child: Text(
+                            !filterActive || allSelected
+                                ? T.get('all')
+                                : '$selectedCount ${T.get('selected')}',
+                            style: Theme.of(sheetContext)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: colors.onSurfaceVariant),
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () {
+                          onSelectionChanged(allSelected
+                              ? <String>{}
+                              : Set<String>.from(items.keys));
+                          onFilterActiveChanged(true);
+                        },
+                        child:
+                            Text(T.get(allSelected ? 'clearAll' : 'selectAll')),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final entry in visibleItems)
+                        SizedBox(
+                          width: optionWidth,
+                          child: Builder(builder: (context) {
+                            final isSelected =
+                                selectedItems.contains(entry.key);
+                            final itemColor = colorForItem(entry.key);
+                            return Material(
+                              color: isSelected
+                                  ? colors.primaryContainer
+                                      .withValues(alpha: 0.5)
+                                  : colors.surfaceContainerLow,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: BorderSide(
+                                  color: isSelected
+                                      ? colors.primary.withValues(alpha: 0.45)
+                                      : colors.outlineVariant
+                                          .withValues(alpha: 0.55),
+                                ),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                onTap: () {
+                                  final next = Set<String>.from(selectedItems);
+                                  if (next.contains(entry.key)) {
+                                    next.remove(entry.key);
+                                  } else {
+                                    next.add(entry.key);
+                                  }
+                                  onSelectionChanged(next);
+                                  onFilterActiveChanged(true);
+                                },
+                                child: SizedBox(
+                                  height: 62,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 34,
+                                          height: 34,
+                                          decoration: BoxDecoration(
+                                            color: itemColor.withValues(
+                                                alpha: 0.12),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(iconForItem(entry.key),
+                                              size: 18, color: itemColor),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            entry.value,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(sheetContext)
+                                                .textTheme
+                                                .labelMedium
+                                                ?.copyWith(
+                                                    color: colors.onSurface,
+                                                    height: 1.15),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Icon(
+                                          isSelected
+                                              ? Icons.check_circle
+                                              : Icons.circle_outlined,
+                                          size: 18,
+                                          color: isSelected
+                                              ? colors.primary
+                                              : colors.outlineVariant,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                    ],
+                  ),
+                  if (items.length > 5)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => onShowAllChanged(!showAll),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(T.get(showAll ? 'showLess' : 'showAll')),
+                            const SizedBox(width: 4),
+                            Icon(
+                              showAll
+                                  ? Icons.expand_less_rounded
+                                  : Icons.expand_more_rounded,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(sheetContext).height * 0.82,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(T.get('filters'),
+                              style:
+                                  Theme.of(sheetContext).textTheme.titleLarge),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          icon: const Icon(Icons.close),
+                          tooltip: T.get('close'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                      children: [
+                        selectionSection(
+                          title: T.get('filterType'),
+                          items: {
+                            'income': T.get('income'),
+                            'expense': T.get('expense'),
+                          },
+                          selectedItems: draftTypes,
+                          filterActive: true,
+                          showAll: true,
+                          onShowAllChanged: (_) {},
+                          onFilterActiveChanged: (_) {},
+                          iconForItem: (type) => type == 'income'
+                              ? Icons.arrow_upward
+                              : Icons.arrow_downward,
+                          colorForItem: (type) =>
+                              type == 'income' ? Colors.green : Colors.red,
+                          onSelectionChanged: (value) =>
+                              setPanelState(() => draftTypes = value),
+                        ),
+                        selectionSection(
+                          title: T.get('filterCategory'),
+                          items: categoryItems,
+                          selectedItems: draftCategories,
+                          filterActive: draftCategoryFilterActive,
+                          showAll: showAllCategories,
+                          onShowAllChanged: (value) =>
+                              setPanelState(() => showAllCategories = value),
+                          onFilterActiveChanged: (value) => setPanelState(
+                              () => draftCategoryFilterActive = value),
+                          iconForItem: _iconOf,
+                          colorForItem: _colorOf,
+                          onSelectionChanged: (value) =>
+                              setPanelState(() => draftCategories = value),
+                        ),
+                        if (_selectedPaymentPage == 0)
+                          selectionSection(
+                            title: T.get('filterPayment'),
+                            items: paymentItems,
+                            selectedItems: draftPayments,
+                            filterActive: draftPaymentFilterActive,
+                            showAll: showAllPayments,
+                            onShowAllChanged: (value) =>
+                                setPanelState(() => showAllPayments = value),
+                            onFilterActiveChanged: (value) => setPanelState(
+                                () => draftPaymentFilterActive = value),
+                            iconForItem: _paymentIconOf,
+                            colorForItem: _paymentColorOf,
+                            onSelectionChanged: (value) =>
+                                setPanelState(() => draftPayments = value),
+                          ),
+                      ],
+                    ),
+                  ),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedTypes = {'income', 'expense'};
+                                  _selectedCategories.clear();
+                                  _selectedPayments.clear();
+                                  _categoryFilterActive = false;
+                                  _paymentFilterActive = false;
+                                });
+                                Navigator.pop(sheetContext);
+                              },
+                              icon: const Icon(Icons.restart_alt),
+                              label: Text(T.get('clearFilters')),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedTypes = draftTypes;
+                                  _selectedCategories = draftCategories;
+                                  _selectedPayments = draftPayments;
+                                  _categoryFilterActive =
+                                      draftCategoryFilterActive;
+                                  _paymentFilterActive =
+                                      draftPaymentFilterActive;
+                                });
+                                Navigator.pop(sheetContext);
+                              },
+                              child: Text(T.get('apply')),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
-              ListTile(
-                leading: const Icon(Icons.filter_list),
-                title: Text(T.get('filterType')),
-                subtitle: Text(_filterSummary(
-                    _selectedTypes.length == 2 ? 0 : _selectedTypes.length)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showTypeFilter();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.category_outlined),
-                title: Text(T.get('filterCategory')),
-                subtitle: Text(_filterSummary(_selectedCategories.length)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showCategoryFilter();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.account_balance_wallet_outlined),
-                title: Text(T.get('filterPayment')),
-                subtitle: Text(_filterSummary(_selectedPayments.length)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showPaymentFilter();
-                },
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _selectedTypes = {'income', 'expense'};
-                    _selectedCategories.clear();
-                    _selectedPayments.clear();
-                  });
-                  Navigator.pop(sheetContext);
-                },
-                icon: const Icon(Icons.restart_alt),
-                label: Text(T.get('clearFilters')),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1248,8 +1387,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildFilterBar() {
     final activeSelections =
         (_selectedTypes.length == 2 ? 0 : _selectedTypes.length) +
-            _selectedCategories.length +
-            _selectedPayments.length;
+            (_categoryFilterActive ? 1 : 0) +
+            (_selectedPaymentPage == 0 && _paymentFilterActive ? 1 : 0);
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1260,12 +1399,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ['daily', 'weekly', 'monthly', 'yearly', 'none'],
             Icons.date_range,
             (value) => setState(() => _groupType = value!),
+            isActive: _groupType != 'monthly',
           ),
           _buildDropdown(
             _sortOrder,
             ['newest', 'oldest', 'highest', 'lowest'],
             Icons.sort,
             (value) => setState(() => _sortOrder = value!),
+            isActive: _sortOrder != 'newest',
           ),
           _buildMultiSelectButton(
             label: T.get('filters'),
@@ -1480,6 +1621,152 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _toggleTransactionSelection(TransactionModel tx) {
+    setState(() {
+      if (!_selectedTransactionIds.add(tx.id)) {
+        _selectedTransactionIds.remove(tx.id);
+      }
+      _selectedChartCategory = null;
+    });
+  }
+
+  void _clearTransactionSelection() {
+    if (_selectedTransactionIds.isEmpty) return;
+    setState(() {
+      _selectedTransactionIds.clear();
+      _selectedChartCategory = null;
+    });
+  }
+
+  void _showBulkEditSheet() {
+    if (_selectedTransactionIds.isEmpty) return;
+    var selectedCategory = _categoryIcons.keys.first;
+    var selectedPayment = _paymentIcons.keys.first;
+    var changeCategory = false;
+    var changePayment = false;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            12,
+            20,
+            MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${T.get('editSelected')} (${_selectedTransactionIds.length})',
+                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(T.get('changeCategory')),
+                  value: changeCategory,
+                  onChanged: (value) =>
+                      setSheetState(() => changeCategory = value ?? false),
+                ),
+                if (changeCategory)
+                  _buildCategoryField(
+                    selected: selectedCategory,
+                    setModalState: setSheetState,
+                    onChanged: (value) => setSheetState(
+                        () => selectedCategory = value ?? selectedCategory),
+                    outlined: true,
+                  ),
+                const SizedBox(height: 10),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(T.get('changePayment')),
+                  value: changePayment,
+                  onChanged: (value) =>
+                      setSheetState(() => changePayment = value ?? false),
+                ),
+                if (changePayment)
+                  _buildPaymentField(
+                    selected: selectedPayment,
+                    setModalState: setSheetState,
+                    onChanged: (value) => setSheetState(
+                        () => selectedPayment = value ?? selectedPayment),
+                    outlined: true,
+                  ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        child: Text(T.get('cancel')),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: !changeCategory && !changePayment
+                            ? null
+                            : () async {
+                                final batch =
+                                    FirebaseFirestore.instance.batch();
+                                final updatedAt =
+                                    DateTime.now().toIso8601String();
+                                for (final id
+                                    in _selectedTransactionIds.toList()) {
+                                  final updates = <String, dynamic>{
+                                    'updatedAt': updatedAt,
+                                  };
+                                  if (changeCategory) {
+                                    updates['category'] = selectedCategory;
+                                  }
+                                  if (changePayment) {
+                                    updates['paymentMethod'] = selectedPayment;
+                                  }
+                                  batch.update(
+                                      _transactionsCollection.doc(id), updates);
+                                }
+                                try {
+                                  await batch.commit();
+                                  if (mounted) {
+                                    setState(
+                                        () => _selectedTransactionIds.clear());
+                                  }
+                                  if (sheetContext.mounted) {
+                                    Navigator.pop(sheetContext);
+                                  }
+                                } catch (_) {
+                                  if (sheetContext.mounted) {
+                                    ScaffoldMessenger.of(sheetContext)
+                                        .showSnackBar(
+                                      SnackBar(
+                                          content: Text(T.get('saveError'))),
+                                    );
+                                  }
+                                }
+                              },
+                        child: Text(T.get('save')),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showAddTransactionSheet(BuildContext context) {
     final titleController = TextEditingController();
     final amountController = TextEditingController();
@@ -1606,12 +1893,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return false;
     }
 
-    if (_selectedCategories.isNotEmpty &&
-        !_selectedCategories.contains(tx.category)) {
+    if (_categoryFilterActive && !_selectedCategories.contains(tx.category)) {
       return false;
     }
 
-    if (_selectedPayments.isNotEmpty &&
+    if (paymentScope == null &&
+        _paymentFilterActive &&
         !_selectedPayments.contains(tx.paymentMethod)) {
       return false;
     }
@@ -1783,7 +2070,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                T.get('currentBalance'),
+                T.get(_selectedTransactionIds.isNotEmpty
+                    ? 'selectedNet'
+                    : 'currentBalance'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 10, color: Colors.grey),
@@ -1979,10 +2268,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         isPaymentValid ? _paymentIconOf(tx.paymentMethod) : Icons.help_outline;
     final paymentColor =
         isPaymentValid ? _paymentColorOf(tx.paymentMethod) : Colors.red;
+    final isSelected = _selectedTransactionIds.contains(tx.id);
+    final isSelecting = _selectedTransactionIds.isNotEmpty;
+    final colors = Theme.of(context).colorScheme;
 
     return Dismissible(
       key: ValueKey(tx.id),
-      direction: DismissDirection.endToStart,
+      direction:
+          isSelecting ? DismissDirection.none : DismissDirection.endToStart,
       background: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
@@ -2000,13 +2293,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       onDismissed: (_) => _handleDelete(context, tx),
       child: InkWell(
-        onTap: () => _showEditDialog(tx),
+        borderRadius: BorderRadius.circular(12),
+        onLongPress: () => _toggleTransactionSelection(tx),
+        onTap: () {
+          if (isSelecting) {
+            _toggleTransactionSelection(tx);
+          } else {
+            _showEditDialog(tx);
+          }
+        },
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          color: isSelected ? colors.primaryContainer : null,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: isSelected
+                ? BorderSide(color: colors.primary.withValues(alpha: 0.6))
+                : BorderSide.none,
+          ),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: categoryColor.withValues(alpha: 0.2),
-              child: Icon(categoryIcon, color: categoryColor),
+              backgroundColor: isSelected
+                  ? colors.primary
+                  : categoryColor.withValues(alpha: 0.2),
+              child: Icon(
+                isSelected ? Icons.check_rounded : categoryIcon,
+                color: isSelected ? colors.onPrimary : categoryColor,
+              ),
             ),
             title: Text(tx.title,
                 style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -2071,23 +2384,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<TransactionModel> allTransactions, {
     String? paymentScope,
   }) {
-    final accountTransactions = paymentScope == null
-        ? allTransactions
-        : allTransactions
-            .where((tx) => tx.paymentMethod == paymentScope)
+    final isSelecting = _selectedTransactionIds.isNotEmpty;
+    if (!identical(_cachedAccountSource, allTransactions) ||
+        _cachedAccountScope != paymentScope) {
+      _cachedAccountSource = allTransactions;
+      _cachedAccountScope = paymentScope;
+      _cachedAccountTransactions = paymentScope == null
+          ? allTransactions
+          : allTransactions
+              .where((tx) => tx.paymentMethod == paymentScope)
+              .toList();
+      _cachedGroupSource = null;
+    }
+    final accountTransactions = _cachedAccountTransactions;
+
+    if (!identical(_cachedGroupSource, accountTransactions) ||
+        _cachedGroupType != _groupType) {
+      _cachedGroupSource = accountTransactions;
+      _cachedGroupType = _groupType;
+      if (_groupType != 'none' && accountTransactions.isNotEmpty) {
+        final latestKey = _groupKey(accountTransactions.first);
+        _cachedGroupTransactions = accountTransactions
+            .where((tx) => _groupKey(tx) == latestKey)
             .toList();
-    List<TransactionModel> scopeTransactions = accountTransactions;
-    if (_groupType != 'none' && accountTransactions.isNotEmpty) {
-      final latestKey = _groupKey(accountTransactions.first);
-      scopeTransactions = accountTransactions
-          .where((tx) => _groupKey(tx) == latestKey)
-          .toList();
+      } else {
+        _cachedGroupTransactions = accountTransactions;
+      }
+      _cachedVisibleSource = null;
     }
 
-    final allFilteredTx = scopeTransactions
-        .where((tx) => _isMatchFilters(tx, paymentScope: paymentScope))
+    final typeKey = _selectedTypes.toList()..sort();
+    final categoryKey = _selectedCategories.toList()..sort();
+    final paymentKey = _selectedPayments.toList()..sort();
+    final visibleKey = jsonEncode([
+      paymentScope,
+      _sortOrder,
+      _groupType,
+      typeKey,
+      _categoryFilterActive,
+      categoryKey,
+      _paymentFilterActive,
+      paymentKey,
+    ]);
+    if (!identical(_cachedVisibleSource, allTransactions) ||
+        _cachedVisibleKey != visibleKey) {
+      _cachedVisibleSource = allTransactions;
+      _cachedVisibleKey = visibleKey;
+      _cachedVisibleTransactions =
+          _filterAndSort(allTransactions, paymentScope: paymentScope);
+      _cachedVisibleListItems = _buildListItems(_cachedVisibleTransactions);
+      _cachedFilteredScopeTransactions = _cachedGroupTransactions
+          .where((tx) => _isMatchFilters(tx, paymentScope: paymentScope))
+          .toList();
+    }
+    final filteredScopeTransactions = _cachedFilteredScopeTransactions;
+    final selectedTransactions = _selectedTransactionIds
+        .map((id) => _cachedTransactionsById[id])
+        .whereType<TransactionModel>()
+        .where((tx) => paymentScope == null || tx.paymentMethod == paymentScope)
         .toList();
-
+    final allFilteredTx =
+        isSelecting ? selectedTransactions : filteredScopeTransactions;
     final filteredForStats =
         allFilteredTx.where((tx) => tx.category != 'transfer').toList();
 
@@ -2109,12 +2466,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       0,
       (total, tx) => total + (tx.isExpense ? -tx.amount : tx.amount),
     );
-
-    final exportTransactions =
-        _filterAndSort(scopeTransactions, paymentScope: paymentScope);
-    final listItems = _buildListItems(
-      _filterAndSort(allTransactions, paymentScope: paymentScope),
+    final selectedNet = selectedTransactions.fold<double>(
+      0,
+      (total, tx) => total + (tx.isExpense ? -tx.amount : tx.amount),
     );
+
+    // Keep the full filtered list visible during selection so more rows can be
+    // tapped and added; only the dashboard totals are based on selected rows.
+    final listItems = _cachedVisibleListItems;
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
+    final selectedNetLabel = NumberFormat.currency(
+      locale: locale,
+      symbol: '฿',
+      decimalDigits: 2,
+    ).format(selectedNet);
 
     return CustomScrollView(
       controller: _dashboardScrollController,
@@ -2124,29 +2489,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               _buildAccountOverview(
                 paymentScope: paymentScope,
-                accountTransactions: accountTransactions,
+                accountTransactions:
+                    isSelecting ? selectedTransactions : accountTransactions,
                 chartTransactions: filteredForStats,
                 income: totalIncome,
                 expense: totalExpense,
                 balance: realBalance,
-                currentBalance: currentBalance,
+                currentBalance: isSelecting ? selectedNet : currentBalance,
               ),
-              if (accountTransactions.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: OutlinedButton.icon(
-                      onPressed: exportTransactions.isEmpty
-                          ? null
-                          : () => ExportService.exportToCsv(exportTransactions),
-                      icon: const Icon(Icons.ios_share_outlined),
-                      label: Text(T.get('exportCsv')),
-                    ),
+              if (isSelecting)
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primaryContainer
+                        .withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                                '${_selectedTransactionIds.length} ${T.get('selectedTransactions')}'),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${T.get('selectedNet')}: $selectedNetLabel',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: T.get('cancel'),
+                        onPressed: _clearTransactionSelection,
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: _showBulkEditSheet,
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: Text(T.get('editSelected')),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-              ],
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
@@ -2155,7 +2547,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(T.get('history'),
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text(T.get('swipeToDelete'),
+                    Text(
+                        isSelecting
+                            ? T.get('tapToSelectMore')
+                            : T.get('longPressToSelect'),
                         style:
                             const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
@@ -2195,68 +2590,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildPaymentPageSelector(List<String> payments) {
     final selectedIndex =
         _selectedPaymentPage.clamp(0, payments.length).toInt();
-    final selectedPayment =
-        selectedIndex == 0 ? null : payments[selectedIndex - 1];
+    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Row(
-        children: [
-          Icon(
-            selectedPayment == null
-                ? Icons.account_balance_wallet_outlined
-                : _paymentIconOf(selectedPayment),
-            color: selectedPayment == null
-                ? Theme.of(context).colorScheme.primary
-                : _paymentColorOf(selectedPayment),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
-                value: selectedIndex,
-                isExpanded: true,
-                borderRadius: BorderRadius.circular(12),
-                icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                items: [
-                  DropdownMenuItem<int>(
-                    value: 0,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(T.get('primaryPayment')),
-                        const SizedBox(width: 8),
-                        Text(
-                          '· ${T.get('allAccounts')}',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (var index = 0; index < payments.length; index++)
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          border:
+              Border.all(color: colors.outlineVariant.withValues(alpha: 0.8)),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: selectedIndex,
+                  isExpanded: true,
+                  borderRadius: BorderRadius.circular(14),
+                  menuMaxHeight: 400,
+                  icon: Icon(Icons.keyboard_arrow_down_rounded,
+                      color: colors.onSurfaceVariant),
+                  items: [
                     DropdownMenuItem<int>(
-                      value: index + 1,
-                      child: Text(
-                        T.get(payments[index]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      value: 0,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined,
+                              size: 20, color: colors.primary),
+                          const SizedBox(width: 10),
+                          Text(T.get('primaryPayment')),
+                          const SizedBox(width: 8),
+                          Text(
+                            '· ${T.get('allAccounts')}',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                ],
-                onChanged: (index) {
-                  if (index == null) return;
-                  _selectPaymentAccount(
-                    index,
-                    slideDirection: index >= selectedIndex ? 1 : -1,
-                  );
-                },
+                    for (var index = 0; index < payments.length; index++)
+                      DropdownMenuItem<int>(
+                        value: index + 1,
+                        child: Row(
+                          children: [
+                            Icon(_paymentIconOf(payments[index]),
+                                size: 20,
+                                color: _paymentColorOf(payments[index])),
+                            const SizedBox(width: 10),
+                            Text(
+                              T.get(payments[index]),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                  onChanged: (index) {
+                    if (index == null) return;
+                    _selectPaymentAccount(
+                      index,
+                      slideDirection: index >= selectedIndex ? 1 : -1,
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2385,14 +2792,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           return _buildDashboardSkeleton();
                         }
 
-                        final allTransactions = snapshot.data!.docs
-                            .map((doc) {
-                              final data = doc.data() as Map<String, dynamic>;
-                              data['id'] = doc.id;
-                              return TransactionModel.fromMap(data);
-                            })
-                            .where((tx) => !_pendingDeleteIds.contains(tx.id))
-                            .toList();
+                        final querySnapshot = snapshot.data!;
+                        if (!identical(_cachedSnapshot, querySnapshot)) {
+                          _cachedSnapshot = querySnapshot;
+                          _cachedParsedTransactions =
+                              querySnapshot.docs.map((doc) {
+                            final data = Map<String, dynamic>.from(
+                                doc.data() as Map<String, dynamic>);
+                            data['id'] = doc.id;
+                            return TransactionModel.fromMap(data);
+                          }).toList();
+                          _cachedPendingDeleteKey = '\u0000';
+                        }
+                        final pendingDeleteKey =
+                            (_pendingDeleteIds.toList()..sort()).join('\u0000');
+                        if (_cachedPendingDeleteKey != pendingDeleteKey) {
+                          _cachedPendingDeleteKey = pendingDeleteKey;
+                          _cachedAvailableTransactions =
+                              _cachedParsedTransactions
+                                  .where((tx) =>
+                                      !_pendingDeleteIds.contains(tx.id))
+                                  .toList();
+                          _cachedTransactionsById
+                            ..clear()
+                            ..addEntries(_cachedAvailableTransactions
+                                .map((tx) => MapEntry(tx.id, tx)));
+                        }
+                        final allTransactions = _cachedAvailableTransactions;
 
                         final payments = _paymentIcons.keys.toList();
                         final selectedIndex = _selectedPaymentPage
