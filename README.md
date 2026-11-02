@@ -1,165 +1,130 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="KeepTang Logo" width="120"/>
+<img src="assets/logo.png" alt="โลโก้ KeepTang" width="112" />
 
-# 💰 เก็บตัง — KeepTang
+# 💰 เก็บตัง | KeepTang
 
-**แอปบันทึกรายรับ-รายจ่ายส่วนบุคคล ที่ใช้งานง่าย ไม่ต้องสมัครบัญชี**
+**แอปบันทึกรายรับ–รายจ่ายส่วนบุคคล ใช้งานง่าย เริ่มต้นได้โดยไม่ต้องสมัครบัญชี**
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue?style=for-the-badge)]()
-[![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS%20%7C%20Web-02569B?style=for-the-badge&logo=flutter)]()
-[![Framework](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white)]()
-[![Database](https://img.shields.io/badge/Cloud%20Firestore-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)]()
-[![License](https://img.shields.io/badge/license-Proprietary-grey?style=for-the-badge)]()
+[![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?logo=dart&logoColor=white)](https://dart.dev)
+[![Firebase](https://img.shields.io/badge/Firebase-Cloud%20Firestore-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com)
+[![Version](https://img.shields.io/badge/version-1.3.0-4C8BF5)](pubspec.yaml)
+[![License](https://img.shields.io/badge/license-not%20specified-lightgrey)](#)
 
 </div>
 
 ---
 
-## 📌 เกี่ยวกับแอป
+## 📖 เกี่ยวกับ KeepTang
 
-**KeepTang (เก็บตัง)** เป็นแอปจัดการการเงินส่วนบุคคล พัฒนาด้วย **Flutter** และเก็บข้อมูลบน **Firebase Cloud Firestore** แบบเรียลไทม์ ใช้งานได้ทันทีโดยไม่ต้องสมัครบัญชี — เปิดแอป ตั้งชื่อผู้ใช้ แล้วเริ่มจดเงินได้เลย
+KeepTang เป็นแอปจัดการการเงินส่วนบุคคล พัฒนาด้วย Flutter และใช้ Cloud Firestore จัดเก็บรายการ ผู้ใช้เริ่มต้นใช้งานด้วย Guest ID ประจำอุปกรณ์ โดยไม่ต้องสร้างบัญชีหรือเข้าสู่ระบบ
 
-> 🆔 **ไม่มีระบบล็อกอิน ไม่มีการสมัครสมาชิก** — แต่ละเครื่องจะได้ **Guest ID แบบสุ่มที่ไม่ซ้ำกับใคร** โดยอัตโนมัติ ส่วนชื่อผู้ใช้เป็นเพียงชื่อแสดงผลที่เปลี่ยนได้อิสระ
+## ✨ ฟีเจอร์
 
----
+- 💵 บันทึก แก้ไข และลบรายการรายรับ–รายจ่าย พร้อมยกเลิกการลบได้
+- 📊 ดูสรุปและกราฟค่าใช้จ่ายแยกตามหมวดหมู่
+- 🗓️ จัดกลุ่มและกรองรายการตามช่วงเวลา ประเภท และช่องทางชำระเงิน
+- 🏷️ ปรับแต่งหมวดหมู่และช่องทางชำระเงิน พร้อมไอคอนและสี
+- 🆔 ใช้งานแบบ Guest พร้อมชื่อแสดงผลที่แก้ไขได้
+- 🌐 รองรับภาษาไทยและภาษาอังกฤษ
+- 🌗 เลือกธีมสว่างหรือธีมมืด
+- 📄 ส่งออกข้อมูลเป็น CSV และ PDF
 
-## ✨ ฟีเจอร์หลัก
+## 🧰 เทคโนโลยี
 
-| ฟีเจอร์ | รายละเอียด |
+| เทคโนโลยี | การใช้งาน |
 |---|---|
-| 🆔 **Guest ID สุ่มไม่ซ้ำ** | แต่ละเครื่องได้ ID เฉพาะ (เช่น `G-mdef4k2x7q3z`) สร้างอัตโนมัติ ตรวจซ้ำกับฐานข้อมูลก่อนใช้เสมอ — คนละเครื่องคือคนละพื้นที่ข้อมูล แม้ตั้งชื่อผู้ใช้เหมือนกัน |
-| ✏️ **ชื่อผู้ใช้เปลี่ยนได้อิสระ** | ชื่อผู้ใช้เป็นแค่ชื่อแสดงผล แก้ได้ทุกเมื่อในหน้าตั้งค่า โดยไม่กระทบข้อมูลเดิมแม้แต่รายการเดียว |
-| 💸 **บันทึกรายรับ-รายจ่าย** | เพิ่ม แก้ไข ลบรายการ พร้อมระบบปัดเพื่อลบ (Swipe-to-Delete) และปุ่มเลิกทำ (Undo) |
-| 📊 **กราฟวงกลม** | แสดงสัดส่วนค่าใช้จ่ายแยกตามหมวดหมู่ พร้อมไอคอนและเปอร์เซ็นต์ในตัว |
-| 🗂 **จัดกลุ่มและกรอง** | จัดกลุ่มตามวัน/สัปดาห์/เดือน/ปี กรองตามประเภทรายการและช่องทางชำระเงิน เรียงใหม่-เก่า-มาก-น้อยได้ |
-| 🎨 **หมวดหมู่และช่องทางชำระเงินแบบกำหนดเอง** | เพิ่ม/แก้ไข/ลบได้เอง พร้อมเลือกไอคอนและสีประจำรายการ |
-| 🌐 **สองภาษา** | ไทย / อังกฤษ เปลี่ยนได้ทันทีทั่วทั้งแอป |
-| 🌗 **ธีมสว่าง-มืด** | เลือก Light / Dark ได้ตามใจชอบ |
+| Flutter และ Dart | พัฒนาแอปหลายแพลตฟอร์ม |
+| Firebase Core | เริ่มต้นการเชื่อมต่อ Firebase |
+| Cloud Firestore | จัดเก็บและซิงค์ข้อมูลรายการ |
+| SharedPreferences | บันทึกการตั้งค่าบนอุปกรณ์ |
+| FL Chart | แสดงกราฟสรุปค่าใช้จ่าย |
+| CSV และ PDF | ส่งออกข้อมูล |
 
----
+## 🗂️ โครงสร้างโปรเจกต์
 
-## 🛠 เทคโนโลยีที่ใช้
-
-- **Flutter (Dart)** — โครงสร้าง UI และ state management แบบเรียบง่าย
-- **Firebase Cloud Firestore** — ฐานข้อมูลเรียลไทม์ ซิงค์ข้อมูลทันที
-- **FL Chart** — กราฟวงกลมสรุปสัดส่วนการเงิน
-- **SharedPreferences** — เก็บ Guest ID, ชื่อผู้ใช้, ธีม, ภาษา และหมวดหมู่ที่กำหนดเอง
-- **Material Design 3** — ดีไซน์ร่วมสมัย รองรับทั้งโหมดสว่างและมืด
-
----
-
-## 🆔 ระบบตัวตนแบบ Guest
-
-แอปตัดระบบล็อกอิน Facebook/Google ออกทั้งหมด แล้วใช้ระบบ Guest ที่ทำงานดังนี้
-
-1. **เปิดแอปครั้งแรก** — ระบบสุ่ม Guest ID รูปแบบ `G-` + เวลา (base36) + ตัวอักษรสุ่ม 4 ตัว แล้วตรวจกับ Firestore ว่าไม่มีใครใช้ ID นี้ก่อน (ถ้าออฟไลน์จะใช้ค่าที่สุ่มได้ทันที เพราะโอกาสชนกันแทบเป็นศูนย์)
-2. **ตั้งชื่อผู้ใช้** — ชื่อนี้เป็นแค่ชื่อแสดงผลเท่านั้น ไม่ได้ผูกกับพื้นที่ข้อมูล
-3. **เปลี่ยนชื่อเมื่อไหร่ก็ได้** — ข้อมูลทั้งหมดยังอยู่กับ Guest ID เดิมของเครื่อง
-
-### โครงสร้างข้อมูลบน Firestore
-
-```text
-guests/{guestId}                  ← ID สุ่มไม่ซ้ำ เช่น G-mdef4k2x7q3z
-├── username: "สมชาย"            ← ชื่อแสดงผล (แก้ได้อิสระ)
-├── createdAt: <serverTimestamp>
-└── transactions/{docId}
-    ├── title:        "ค่ากาแฟ"
-    ├── amount:       55.0
-    ├── date:         "2026-10-14T09:30:00.000"
-    ├── isExpense:    1
-    ├── category:     "อาหาร"
-    ├── paymentMethod: "cash"
-    └── updatedAt:    "2026-10-14T12:00:00.000"   (เฉพาะรายการที่แก้ไขแล้ว)
-```
-
-> 🔄 **อัปเกรดจากเวอร์ชันเก่าอัตโนมัติ** — เครื่องที่เคยใช้เวอร์ชันที่ใช้ "ชื่อผู้ใช้เป็น ID" จะถูกคัดลอกข้อมูลจากพื้นที่เดิม (`guests/{ชื่อผู้ใช้}`) มายัง ID สุ่มใหม่โดยอัตโนมัติเมื่อเปิดแอปครั้งแรก (คัดลอกเท่านั้น ไม่ลบข้อมูลเดิม)
-
----
-
-## 📂 โครงสร้างโปรเจกต์
+โครงสร้างปัจจุบันแยกหน้าจอ โมเดล บริการ และส่วนช่วยใช้งานออกจากกัน เหมาะกับขนาดโปรเจกต์ในตอนนี้:
 
 ```text
 KeepTang/
-├── android/                 # การตั้งค่าระบบ Android (รวม google-services.json)
-├── ios/                     # การตั้งค่าระบบ iOS
-├── assets/                  # โลโก้และไฟล์ภาพ
-├── lib/                     # ซอร์สโค้ดหลักของแอป
-│   ├── main.dart            # จุดเริ่มต้น, ตั้งค่า Firebase, ธีม และภาษา
-│   ├── firebase_options.dart
-│   ├── models/
-│   │   └── transaction_model.dart     # โครงสร้างข้อมูลรายรับ-รายจ่าย
-│   ├── screens/
-│   │   ├── splash_screen.dart         # หน้าเริ่ม — สุ่ม Guest ID แล้วเลือกเส้นทาง
-│   │   ├── guest_setup_screen.dart    # หน้าตั้งชื่อผู้ใช้ครั้งแรก
-│   │   ├── dashboard_screen.dart      # หน้าหลัก — สรุปยอด, กราฟ, รายการ, ตัวกรอง
-│   │   └── settings_screen.dart       # ตั้งค่า — ชื่อผู้ใช้, หมวดหมู่, ธีม, ภาษา
-│   ├── services/
-│   │   └── guest_service.dart         # Guest ID สุ่มไม่ซ้ำ + ย้ายข้อมูลเก่าอัตโนมัติ
-│   └── utils/
-│       └── l10n.dart                  # คำแปลไทย/อังกฤษทั้งแอป
-├── firestore.rules          # กติกาความปลอดภัยของ Firestore
-├── pubspec.yaml             # รายการแพ็กเกจและทรัพยากร
+├── android/                  # ไฟล์โปรเจกต์ Android
+├── ios/                      # ไฟล์โปรเจกต์ iOS
+├── assets/                   # โลโก้และทรัพยากรของแอป
+├── lib/
+│   ├── main.dart             # จุดเริ่มต้นและตั้งค่าแอป
+│   ├── firebase_options.dart # การตั้งค่า Firebase ที่สร้างด้วย FlutterFire
+│   ├── models/               # แบบจำลองข้อมูล
+│   ├── screens/              # หน้าจอของแอป
+│   ├── services/             # งาน Firestore, Guest และส่งออกข้อมูล
+│   └── utils/                # ธีมและคำแปล
+├── firestore.rules           # กฎการเข้าถึง Cloud Firestore
+├── pubspec.yaml              # Dependencies และการตั้งค่า Flutter
 └── README.md
 ```
 
----
+เมื่อฟีเจอร์เพิ่มขึ้น แนะนำให้จัดกลุ่มโค้ดตามฟีเจอร์เพื่อให้ดูแลและทดสอบง่ายขึ้น เช่น:
+
+```text
+lib/
+├── app/                      # แอปหลัก, routing และธีม
+├── core/                     # ส่วนกลาง เช่น localization และส่วนประกอบร่วม
+├── features/
+│   ├── dashboard/            # หน้าหลักและสรุปยอด
+│   ├── transactions/         # รายการและแบบฟอร์มธุรกรรม
+│   ├── settings/             # การตั้งค่า
+│   └── tax_export/           # ส่งออกรายงานภาษี
+├── data/                     # แหล่งข้อมูลและการเชื่อมต่อ Firebase
+└── main.dart
+```
+
+ภายในแต่ละฟีเจอร์สามารถแยก `models/`, `services/` หรือ `widgets/` เมื่อมีโค้ดมากพอ โดยค่อยย้ายจากโครงสร้างปัจจุบันตามความจำเป็น
 
 ## 🚀 เริ่มต้นใช้งาน
 
 ### สิ่งที่ต้องมี
 
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) (ช่องทาง stable ล่าสุด)
-- บัญชี [Firebase](https://console.firebase.google.com/) พร้อมสร้างโปรเจกต์และเปิดใช้ **Cloud Firestore**
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) ที่รองรับ Dart SDK 3
+- โปรเจกต์ Firebase ที่เปิดใช้ Cloud Firestore
+- FlutterFire CLI สำหรับสร้างการตั้งค่าแพลตฟอร์ม
 
 ### ติดตั้งและรัน
 
 ```bash
-# 1. โคลนโปรเจกต์
 git clone https://github.com/thanakorn-official/KeepTang.git
 cd KeepTang
-
-# 2. ติดตั้งแพ็กเกจ
 flutter pub get
 
-# 3. ตั้งค่า Firebase สำหรับโปรเจกต์ของคุณ (สร้าง firebase_options.dart)
+# เชื่อมแอปกับ Firebase ของคุณ และสร้าง/อัปเดต lib/firebase_options.dart
 dart pub global activate flutterfire_cli
 flutterfire configure
 
-# 4. รันแอป
 flutter run
 ```
 
-> 💡 repo นี้แนบไฟล์ config ของ Firebase โปรเจกต์เดิมมาด้วย (`android/app/google-services.json` และ `lib/firebase_options.dart`) ถ้าต้องการใช้ Firebase โปรเจกต์ของตัวเอง ให้รัน `flutterfire configure` ทับ แล้วไฟล์ config ทั้งหมดจะถูกสร้างใหม่ให้อัตโนมัติ
+เลือกแพลตฟอร์มที่ต้องการในขั้นตอน `flutterfire configure` คำสั่งนี้จะสร้างไฟล์ตั้งค่า Firebase ในเครื่อง ซึ่งไม่ได้เก็บไว้ใน Git เพื่อให้แต่ละคนใช้ Firebase project ของตนเอง ตรวจสอบว่าเปิดใช้ Cloud Firestore แล้วก่อนรันแอป
 
-### ตั้งค่า Firestore Rules
+### ติดตั้งกฎ Firestore
+
+ติดตั้ง Firebase CLI และเลือกโปรเจกต์ Firebase ก่อน จากนั้นใช้คำสั่ง:
 
 ```bash
 firebase deploy --only firestore:rules
 ```
 
-### สร้างไฟล์ Release
+### สร้างไฟล์สำหรับเผยแพร่
 
 ```bash
-flutter build apk --release        # Android APK
-flutter build web                  # เว็บแอป
+flutter build apk --release
+flutter build web
 ```
 
----
-
-## 🗺 แนวทางพัฒนาต่อ
-
-- [ ] ส่งออก/นำเข้าข้อมูล (CSV) เพื่อย้ายเครื่องหรือสำรองข้อมูล
-- [ ] โหมดผู้พิทักษ์ — ลิงก์ Guest ID เข้ากับบัญชีเพื่อกู้คืนข้อมูลข้ามเครื่อง
-- [ ] แจ้งเตือนบันทึกรายการรายวัน
-- [ ] วิดเจ็ตหน้าจอหลักสำหรับเพิ่มรายการด่วน
+> **หมายเหตุ:** ระบบ Guest ใช้ Guest ID ที่เก็บไว้ในอุปกรณ์ การล้างข้อมูลแอปหรือเปลี่ยนอุปกรณ์อาจทำให้ไม่สามารถเข้าถึงข้อมูลเดิมได้ โปรดตรวจสอบและกำหนด Firestore Security Rules ให้เหมาะกับการใช้งานจริงก่อนนำขึ้น Production
 
 ---
 
 <div align="center">
 
-**KeepTang (เก็บตัง)** — เก็บทุกบาท ให้ครบทุกตัง 💰
-
-Made with 💙 Flutter
+สร้างด้วย Flutter 💙
 
 </div>
