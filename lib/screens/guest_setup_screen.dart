@@ -126,6 +126,64 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
     );
   }
 
+  Widget _buildPreferences(ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.language, size: 19, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(child: Text(T.get('language'))),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'th', label: Text('ไทย')),
+                  ButtonSegment(value: 'en', label: Text('EN')),
+                ],
+                selected: {languageNotifier.value},
+                onSelectionChanged: (value) {
+                  languageNotifier.value = value.first;
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.contrast, size: 19, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(child: Text(T.get('theme'))),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(
+                    value: 'light',
+                    label: Text(T.get('lightMode')),
+                  ),
+                  ButtonSegment(
+                    value: 'dark',
+                    label: Text(T.get('darkMode')),
+                  ),
+                ],
+                selected: {themeNotifier.value},
+                onSelectionChanged: (value) {
+                  themeNotifier.value = value.first;
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -140,54 +198,15 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
-                      width: 96,
-                      height: 84,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          const Positioned(
-                            top: -10,
-                            left: 4,
-                            child: Icon(Icons.change_history,
-                                size: 26, color: Colors.black87),
-                          ),
-                          const Positioned(
-                            top: -10,
-                            right: 4,
-                            child: Icon(Icons.change_history,
-                                size: 26, color: Colors.black87),
-                          ),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black87,
-                              borderRadius: BorderRadius.circular(28),
-                            ),
-                          ),
-                          const Positioned(
-                            top: 18,
-                            left: 12,
-                            child: SizedBox(
-                                width: 7,
-                                height: 7,
-                                child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                        color: Colors.amber,
-                                        shape: BoxShape.circle))),
-                          ),
-                          const Positioned(
-                            top: 18,
-                            right: 12,
-                            child: SizedBox(
-                                width: 7,
-                                height: 7,
-                                child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                        color: Colors.amber,
-                                        shape: BoxShape.circle))),
-                          ),
-                        ],
-                      ),
+                    _buildPreferences(scheme),
+                    const SizedBox(height: 28),
+                    Image.asset(
+                      'assets/splash_bill_base.png',
+                      width: 104,
+                      height: 104,
+                      fit: BoxFit.contain,
+                      color: scheme.onSurface,
+                      semanticLabel: T.get('appTitle'),
                     ),
                     const SizedBox(height: 28),
                     Text(
