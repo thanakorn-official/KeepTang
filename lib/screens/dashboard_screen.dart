@@ -147,7 +147,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _groupType = 'monthly';
   String _sortOrder = 'newest';
 
-  Set<String> _selectedTypes = {'income', 'expense'};
+  Set<String> _selectedTypes = {'income', 'expense', 'transfer'};
   Set<String> _selectedCategories = {};
   Set<String> _selectedPayments = {};
   bool _categoryFilterActive = false;
@@ -217,8 +217,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         switchInCurve: Curves.easeOutCubic,
         switchOutCurve: Curves.easeInCubic,
         transitionBuilder: (child, animation) {
+          final isOutgoing = animation.status == AnimationStatus.reverse;
+          final slideDirection = isOutgoing
+              ? -_overviewSlideDirection.toDouble()
+              : _overviewSlideDirection.toDouble();
           final slide = Tween<Offset>(
-            begin: Offset(_overviewSlideDirection * 0.24, 0),
+            begin: Offset(slideDirection * 1.15, 0),
             end: Offset.zero,
           ).animate(animation);
           return FadeTransition(
@@ -1283,17 +1287,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           items: {
                             'income': T.get('income'),
                             'expense': T.get('expense'),
+                            'transfer': T.get('transfer'),
                           },
                           selectedItems: draftTypes,
                           filterActive: true,
                           showAll: true,
                           onShowAllChanged: (_) {},
                           onFilterActiveChanged: (_) {},
-                          iconForItem: (type) => type == 'income'
-                              ? Icons.arrow_upward
-                              : Icons.arrow_downward,
-                          colorForItem: (type) =>
-                              type == 'income' ? Colors.green : Colors.red,
+                          iconForItem: (type) => switch (type) {
+                            'income' => Icons.arrow_upward,
+                            'expense' => Icons.arrow_downward,
+                            _ => Icons.swap_horiz,
+                          },
+                          colorForItem: (type) => switch (type) {
+                            'income' => Colors.green,
+                            'expense' => Colors.red,
+                            _ => Colors.blueGrey,
+                          },
                           onSelectionChanged: (value) =>
                               setPanelState(() => draftTypes = value),
                         ),
@@ -1341,7 +1351,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             child: OutlinedButton.icon(
                               onPressed: () {
                                 setState(() {
-                                  _selectedTypes = {'income', 'expense'};
+                                  _selectedTypes = {
+                                    'income',
+                                    'expense',
+                                    'transfer',
+                                  };
                                   _selectedCategories.clear();
                                   _selectedPayments.clear();
                                   _categoryFilterActive = false;
@@ -1386,7 +1400,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildFilterBar() {
     final activeSelections =
-        (_selectedTypes.length == 2 ? 0 : _selectedTypes.length) +
+        (_selectedTypes.length == 3 ? 0 : _selectedTypes.length) +
             (_categoryFilterActive ? 1 : 0) +
             (_selectedPaymentPage == 0 && _paymentFilterActive ? 1 : 0);
     return SingleChildScrollView(
@@ -1888,11 +1902,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   bool _isMatchFilters(TransactionModel tx, {String? paymentScope}) {
-    if (tx.isExpense && !_selectedTypes.contains('expense')) {
-      return false;
-    }
-    if (!tx.isExpense && !_selectedTypes.contains('income')) {
-      return false;
+    if (tx.category == 'transfer') {
+      if (!_selectedTypes.contains('transfer')) return false;
+    } else {
+      if (tx.isExpense && !_selectedTypes.contains('expense')) {
+        return false;
+      }
+      if (!tx.isExpense && !_selectedTypes.contains('income')) {
+        return false;
+      }
     }
 
     if (_categoryFilterActive && !_selectedCategories.contains(tx.category)) {

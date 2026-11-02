@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/logo.png" alt="KeepTang app icon" width="120" />
+<img src="./assets/splash_bill_base.png" alt="KeepTang app icon" width="120" />
 
 # KeepTang (เก็บตัง)
 

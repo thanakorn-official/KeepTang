@@ -69,7 +69,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   ),
                   child: _showLoading
                       ? SizedBox(
-                          key: const ValueKey('cat-loading'),
+                          key: const ValueKey('bill-loading'),
                           width: 184,
                           height: 184,
                           child: Stack(
@@ -86,9 +86,9 @@ class _SplashScreenState extends State<SplashScreen> {
                                 ),
                               ),
                               Image.asset(
-                                'assets/splash_cat_face.png',
-                                width: 84,
-                                height: 84,
+                                'assets/splash_bill_base.png',
+                                width: 76,
+                                height: 76,
                                 fit: BoxFit.contain,
                                 color: logoColor,
                                 semanticLabel: T.get('appTitle'),
@@ -97,43 +97,14 @@ class _SplashScreenState extends State<SplashScreen> {
                           ),
                         )
                       : SizedBox(
-                          key: const ValueKey('bill-cat-logo'),
+                          key: const ValueKey('bill-logo'),
                           width: 184,
                           height: 184,
-                          child: Stack(
-                            clipBehavior: Clip.hardEdge,
-                            children: [
-                              Positioned(
-                                top: -30,
-                                left: 0,
-                                right: 0,
-                                child: TweenAnimationBuilder<double>(
-                                  tween: Tween(begin: 0.34, end: 0),
-                                  duration: const Duration(milliseconds: 850),
-                                  curve: Curves.easeOutBack,
-                                  builder: (context, offset, child) =>
-                                      Transform.translate(
-                                    offset: Offset(0, offset * 100),
-                                    child: child,
-                                  ),
-                                  child: Image.asset(
-                                    'assets/splash_cat_peek.png',
-                                    width: 120,
-                                    height: 120,
-                                    fit: BoxFit.contain,
-                                    color: logoColor,
-                                  ),
-                                ),
-                              ),
-                              Positioned.fill(
-                                child: Image.asset(
-                                  'assets/splash_bill.png',
-                                  fit: BoxFit.contain,
-                                  color: logoColor,
-                                  semanticLabel: T.get('appTitle'),
-                                ),
-                              ),
-                            ],
+                          child: Image.asset(
+                            'assets/splash_bill_base.png',
+                            fit: BoxFit.contain,
+                            color: logoColor,
+                            semanticLabel: T.get('appTitle'),
                           ),
                         ),
                 ),
