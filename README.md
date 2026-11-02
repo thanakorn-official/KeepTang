@@ -20,21 +20,20 @@
 
 ## ภาพจากแอป
 
-| Dashboard แยกบัญชี | Dashboard ธีมสว่างและมืด |
-|:---:|:---:|
-| ![Dashboard แยกบัญชีของ KeepTang](./screenshot/dashboard-account.jpg) | ![Dashboard ในธีมสว่างและมืด](./screenshot/dashboard-theme.jpg) |
+ปัดหรือเลื่อนแนวนอนเพื่อดูภาพหน้าจอทั้งหมด
 
-| ตัวกรองรายการ | ตั้งค่าแอป |
-|:---:|:---:|
-| ![หน้าตัวกรอง KeepTang](./screenshot/filters.jpg) | ![หน้าตั้งค่า KeepTang](./screenshot/settings.jpg) |
-
-| เพิ่มรายการ | จัดการหมวดหมู่ |
-|:---:|:---:|
-| ![หน้าฟอร์มเพิ่มรายการ](./screenshot/transaction-form.jpg) | ![หน้าจัดการหมวดหมู่](./screenshot/categories.jpg) |
-
-| เลือกหมวดหมู่บน Dashboard | โอนเงินระหว่างบัญชี |
-|:---:|:---:|
-| ![Dashboard เมื่อเลือกหมวดหมู่](./screenshot/category-focus.jpg) | ![หน้าโอนเงินระหว่างบัญชี](./screenshot/transfer.jpg) |
+<table>
+  <tr>
+    <td align="center" valign="top"><a href="./screenshot/dashboard-account.jpg"><img src="./screenshot/dashboard-account.jpg" width="220" alt="Dashboard แยกบัญชี" /></a><br /><sub>Dashboard แยกบัญชี</sub></td>
+    <td align="center" valign="top"><a href="./screenshot/dashboard-theme.jpg"><img src="./screenshot/dashboard-theme.jpg" width="220" alt="Dashboard ธีมสว่างและมืด" /></a><br /><sub>ธีมสว่างและมืด</sub></td>
+    <td align="center" valign="top"><a href="./screenshot/filters.jpg"><img src="./screenshot/filters.jpg" width="220" alt="ตัวกรองรายการ" /></a><br /><sub>ตัวกรองรายการ</sub></td>
+    <td align="center" valign="top"><a href="./screenshot/settings.jpg"><img src="./screenshot/settings.jpg" width="220" alt="หน้าตั้งค่า" /></a><br /><sub>ตั้งค่าแอป</sub></td>
+    <td align="center" valign="top"><a href="./screenshot/transaction-form.jpg"><img src="./screenshot/transaction-form.jpg" width="220" alt="ฟอร์มเพิ่มรายการ" /></a><br /><sub>เพิ่มรายการ</sub></td>
+    <td align="center" valign="top"><a href="./screenshot/categories.jpg"><img src="./screenshot/categories.jpg" width="220" alt="หน้าจัดการหมวดหมู่" /></a><br /><sub>จัดการหมวดหมู่</sub></td>
+    <td align="center" valign="top"><a href="./screenshot/category-focus.jpg"><img src="./screenshot/category-focus.jpg" width="220" alt="Dashboard เมื่อเลือกหมวดหมู่" /></a><br /><sub>เจาะดูหมวดหมู่</sub></td>
+    <td align="center" valign="top"><a href="./screenshot/transfer.jpg"><img src="./screenshot/transfer.jpg" width="220" alt="หน้าโอนเงินระหว่างบัญชี" /></a><br /><sub>โอนเงินระหว่างบัญชี</sub></td>
+  </tr>
+</table>
 
 ## จัดการเงินให้ง่ายขึ้นในทุกวัน
 
