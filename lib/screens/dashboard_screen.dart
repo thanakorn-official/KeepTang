@@ -20,6 +20,14 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  final ScrollController _dashboardScrollController = ScrollController();
+  late final Stream<QuerySnapshot> _transactionsStream;
+  int _selectedPaymentPage = 0;
+  double _accountSwipeDistance = 0;
+  int _overviewSlideDirection = 1;
+  String? _selectedChartCategory;
+  String? _focusedCategoryAtPointerDown;
+
   final Map<String, IconData> _categoryIcons = {
     'อาหาร': Icons.restaurant,
     'เดินทาง': Icons.directions_car,
@@ -130,7 +138,95 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _transactionsStream =
+        _transactionsCollection.orderBy('date', descending: true).snapshots();
     _loadCustomSettings();
+  }
+
+  @override
+  void dispose() {
+    _dashboardScrollController.dispose();
+    super.dispose();
+  }
+
+  void _selectPaymentAccount(int index, {int slideDirection = 1}) {
+    final payments = _paymentIcons.keys.toList();
+    final targetIndex = index.clamp(0, payments.length).toInt();
+    if (targetIndex == _selectedPaymentPage) return;
+
+    setState(() {
+      _selectedPaymentPage = targetIndex;
+      _overviewSlideDirection = slideDirection;
+      _selectedChartCategory = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_dashboardScrollController.hasClients) {
+        _dashboardScrollController.jumpTo(0);
+      }
+    });
+  }
+
+  void _handleAccountSwipeEnd(List<String> payments) {
+    if (_accountSwipeDistance.abs() < 40) return;
+    final direction = _accountSwipeDistance < 0 ? 1 : -1;
+    _selectPaymentAccount(
+      _selectedPaymentPage + direction,
+      slideDirection: direction,
+    );
+    _accountSwipeDistance = 0;
+  }
+
+  Widget _buildAccountOverview({
+    required String? paymentScope,
+    required List<TransactionModel> accountTransactions,
+    required List<TransactionModel> chartTransactions,
+    required double income,
+    required double expense,
+    required double balance,
+    required double currentBalance,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragStart: (_) => _accountSwipeDistance = 0,
+      onHorizontalDragUpdate: (details) {
+        _accountSwipeDistance += details.delta.dx;
+      },
+      onHorizontalDragEnd: (_) =>
+          _handleAccountSwipeEnd(_paymentIcons.keys.toList()),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 320),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          final slide = Tween<Offset>(
+            begin: Offset(_overviewSlideDirection * 0.24, 0),
+            end: Offset.zero,
+          ).animate(animation);
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(position: slide, child: child),
+          );
+        },
+        child: Column(
+          key: ValueKey<String>('overview-${paymentScope ?? 'all'}'),
+          children: [
+            const SizedBox(height: 24),
+            _buildPieChart(
+              chartTransactions,
+              currentBalance: currentBalance,
+            ),
+            if (accountTransactions.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Text(T.get('noData'),
+                    style: const TextStyle(color: Colors.grey)),
+              ),
+            _buildSummaryRow(income, expense, balance),
+            const Divider(height: 24),
+          ],
+        ),
+      ),
+    );
   }
 
   IconData _getDefaultCategoryIcon(String cat) {
@@ -336,6 +432,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required Map<String, String> items,
     required Set<String> selectedItems,
     required ValueChanged<Set<String>> onConfirm,
+    IconData Function(String key)? iconForItem,
+    Color Function(String key)? colorForItem,
   }) async {
     Set<String> tempSelected = Set.from(selectedItems);
     if (tempSelected.isEmpty && items.isNotEmpty) {
@@ -388,11 +486,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               controlAffinity: ListTileControlAffinity.leading,
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12)),
-                              title: Text(entry.value,
-                                  style: TextStyle(
-                                      fontWeight: isSelected
-                                          ? FontWeight.w600
-                                          : FontWeight.normal)),
+                              title: Row(
+                                children: [
+                                  if (iconForItem != null) ...[
+                                    Icon(
+                                      iconForItem(entry.key),
+                                      size: 20,
+                                      color: colorForItem?.call(entry.key) ??
+                                          Theme.of(context).colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 10),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      entry.value,
+                                      style: TextStyle(
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                               value: isSelected,
                               activeColor:
                                   Theme.of(context).colorScheme.primary,
@@ -1032,6 +1148,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       title: T.get('selectCategory'),
       items: items,
       selectedItems: _selectedCategories,
+      iconForItem: _iconOf,
+      colorForItem: _colorOf,
       onConfirm: (value) => setState(() {
         _selectedCategories = value.length == items.length ? <String>{} : value;
       }),
@@ -1046,6 +1164,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       title: T.get('selectPayment'),
       items: items,
       selectedItems: _selectedPayments,
+      iconForItem: _paymentIconOf,
+      colorForItem: _paymentColorOf,
       onConfirm: (value) => setState(() {
         _selectedPayments = value.length == items.length ? <String>{} : value;
       }),
@@ -1478,7 +1598,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  bool _isMatchFilters(TransactionModel tx) {
+  bool _isMatchFilters(TransactionModel tx, {String? paymentScope}) {
     if (tx.isExpense && !_selectedTypes.contains('expense')) {
       return false;
     }
@@ -1496,11 +1616,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return false;
     }
 
+    if (paymentScope != null && tx.paymentMethod != paymentScope) {
+      return false;
+    }
+
     return true;
   }
 
-  List<TransactionModel> _filterAndSort(List<TransactionModel> transactions) {
-    final result = transactions.where((tx) => _isMatchFilters(tx)).toList();
+  List<TransactionModel> _filterAndSort(
+    List<TransactionModel> transactions, {
+    String? paymentScope,
+  }) {
+    final result = transactions
+        .where((tx) => _isMatchFilters(tx, paymentScope: paymentScope))
+        .toList();
 
     result.sort((a, b) {
       switch (_sortOrder) {
@@ -1589,22 +1718,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return items;
   }
 
-  Widget _buildPieChart(List<TransactionModel> transactions) {
+  Widget _buildPieChart(
+    List<TransactionModel> transactions, {
+    required double currentBalance,
+  }) {
     final Map<String, double> categoryTotals = {};
     for (final tx in transactions) {
       categoryTotals[tx.category] =
           (categoryTotals[tx.category] ?? 0.0) + tx.amount;
     }
     final totalSum = categoryTotals.values.fold(0.0, (a, b) => a + b);
+    final selectedCategory = categoryTotals.containsKey(_selectedChartCategory)
+        ? _selectedChartCategory
+        : null;
+    final selectedTotal =
+        selectedCategory == null ? null : categoryTotals[selectedCategory];
+    final selectedPercentage = selectedTotal == null || totalSum == 0
+        ? 0.0
+        : selectedTotal / totalSum * 100;
 
     final sections = categoryTotals.entries.map((entry) {
       final percentage = totalSum > 0 ? (entry.value / totalSum * 100) : 0.0;
+      final isSelected = entry.key == selectedCategory;
+      final isDimmed = selectedCategory != null && !isSelected;
       return PieChartSectionData(
-        color: _colorOf(entry.key),
+        color: _colorOf(entry.key).withValues(alpha: isDimmed ? 0.2 : 1),
         value: entry.value,
         title: '',
-        radius: 65,
-        badgeWidget: percentage >= 6.0
+        radius: isSelected ? 72 : 65,
+        badgeWidget: (selectedCategory == null && percentage >= 6.0) ||
+                (isSelected && percentage >= 6.0)
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1622,13 +1765,149 @@ class _DashboardScreenState extends State<DashboardScreen> {
         badgePositionPercentageOffset: 0.5,
       );
     }).toList();
+    if (totalSum <= 0) {
+      sections.clear();
+      sections.add(
+        PieChartSectionData(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          value: 1,
+          title: '',
+          radius: 65,
+        ),
+      );
+    }
+
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
+    final centerContent = selectedCategory == null
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                T.get('currentBalance'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  NumberFormat.currency(
+                    locale: locale,
+                    symbol: '฿',
+                    decimalDigits: 2,
+                  ).format(currentBalance),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          )
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_iconOf(selectedCategory),
+                  size: 16, color: _colorOf(selectedCategory)),
+              const SizedBox(height: 2),
+              Text(
+                T.get(selectedCategory),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  NumberFormat.currency(
+                    locale: locale,
+                    symbol: '฿',
+                    decimalDigits: 2,
+                  ).format(selectedTotal),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Text(
+                '${selectedPercentage.toStringAsFixed(1)}%',
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
+            ],
+          );
 
     return Column(
       children: [
         SizedBox(
-            height: 200,
-            child: PieChart(PieChartData(
-                sectionsSpace: 2, centerSpaceRadius: 40, sections: sections))),
+          height: 220,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              PieChart(
+                PieChartData(
+                  sectionsSpace: 2,
+                  centerSpaceRadius: 54,
+                  sections: sections,
+                  pieTouchData: PieTouchData(
+                    touchCallback: (event, response) {
+                      if (event is! FlTapUpEvent) return;
+                      final index =
+                          response?.touchedSection?.touchedSectionIndex;
+                      if (index == null ||
+                          index < 0 ||
+                          index >= categoryTotals.length) {
+                        return;
+                      }
+                      final category = categoryTotals.keys.elementAt(index);
+                      final focusedCategoryAtPointerDown =
+                          _focusedCategoryAtPointerDown;
+                      _focusedCategoryAtPointerDown = null;
+                      setState(() {
+                        _selectedChartCategory =
+                            focusedCategoryAtPointerDown == category
+                                ? null
+                                : category;
+                      });
+                    },
+                  ),
+                ),
+                duration: const Duration(milliseconds: 360),
+                curve: Curves.easeInOutCubic,
+              ),
+              IgnorePointer(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.92, end: 1).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                        ),
+                      ),
+                      child: child,
+                    ),
+                  ),
+                  child: SizedBox(
+                    key: ValueKey<String>(
+                      selectedCategory ?? 'current-balance',
+                    ),
+                    width: 104,
+                    child: centerContent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
       ],
     );
@@ -1788,16 +2067,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildContent(List<TransactionModel> allTransactions) {
-    List<TransactionModel> scopeTransactions = allTransactions;
-    if (_groupType != 'none' && allTransactions.isNotEmpty) {
-      final latestKey = _groupKey(allTransactions.first);
-      scopeTransactions =
-          allTransactions.where((tx) => _groupKey(tx) == latestKey).toList();
+  Widget _buildContent(
+    List<TransactionModel> allTransactions, {
+    String? paymentScope,
+  }) {
+    final accountTransactions = paymentScope == null
+        ? allTransactions
+        : allTransactions
+            .where((tx) => tx.paymentMethod == paymentScope)
+            .toList();
+    List<TransactionModel> scopeTransactions = accountTransactions;
+    if (_groupType != 'none' && accountTransactions.isNotEmpty) {
+      final latestKey = _groupKey(accountTransactions.first);
+      scopeTransactions = accountTransactions
+          .where((tx) => _groupKey(tx) == latestKey)
+          .toList();
     }
 
-    final allFilteredTx =
-        scopeTransactions.where((tx) => _isMatchFilters(tx)).toList();
+    final allFilteredTx = scopeTransactions
+        .where((tx) => _isMatchFilters(tx, paymentScope: paymentScope))
+        .toList();
 
     final filteredForStats =
         allFilteredTx.where((tx) => tx.category != 'transfer').toList();
@@ -1816,25 +2105,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .where((tx) => tx.isExpense)
         .fold(0.0, (total, tx) => total + tx.amount);
     final realBalance = realIncome - realExpense;
+    final currentBalance = accountTransactions.fold<double>(
+      0,
+      (total, tx) => total + (tx.isExpense ? -tx.amount : tx.amount),
+    );
 
-    final exportTransactions = _filterAndSort(scopeTransactions);
-    final listItems = _buildListItems(_filterAndSort(allTransactions));
+    final exportTransactions =
+        _filterAndSort(scopeTransactions, paymentScope: paymentScope);
+    final listItems = _buildListItems(
+      _filterAndSort(allTransactions, paymentScope: paymentScope),
+    );
 
     return CustomScrollView(
+      controller: _dashboardScrollController,
       slivers: [
         SliverToBoxAdapter(
           child: Column(
             children: [
-              const SizedBox(height: 24),
-              if (allTransactions.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(32.0),
-                  child: Text(T.get('noData'),
-                      style: const TextStyle(color: Colors.grey)),
-                )
-              else if (filteredForStats.isNotEmpty)
-                _buildPieChart(filteredForStats),
-              if (allTransactions.isNotEmpty) ...[
+              _buildAccountOverview(
+                paymentScope: paymentScope,
+                accountTransactions: accountTransactions,
+                chartTransactions: filteredForStats,
+                income: totalIncome,
+                expense: totalExpense,
+                balance: realBalance,
+                currentBalance: currentBalance,
+              ),
+              if (accountTransactions.isNotEmpty) ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Align(
@@ -1850,8 +2147,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              _buildSummaryRow(totalIncome, totalExpense, realBalance),
-              const Divider(height: 24),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
@@ -1876,7 +2171,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ? SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
-                    child: Text(T.get('noMatch'),
+                    child: Text(
+                        accountTransactions.isEmpty
+                            ? T.get('noData')
+                            : T.get('noMatch'),
                         style: const TextStyle(color: Colors.grey))),
               )
             : SliverList(
@@ -1894,63 +2192,228 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildPaymentPageSelector(List<String> payments) {
+    final selectedIndex =
+        _selectedPaymentPage.clamp(0, payments.length).toInt();
+    final selectedPayment =
+        selectedIndex == 0 ? null : payments[selectedIndex - 1];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
+        children: [
+          Icon(
+            selectedPayment == null
+                ? Icons.account_balance_wallet_outlined
+                : _paymentIconOf(selectedPayment),
+            color: selectedPayment == null
+                ? Theme.of(context).colorScheme.primary
+                : _paymentColorOf(selectedPayment),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: selectedIndex,
+                isExpanded: true,
+                borderRadius: BorderRadius.circular(12),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                items: [
+                  DropdownMenuItem<int>(
+                    value: 0,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(T.get('primaryPayment')),
+                        const SizedBox(width: 8),
+                        Text(
+                          '· ${T.get('allAccounts')}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  for (var index = 0; index < payments.length; index++)
+                    DropdownMenuItem<int>(
+                      value: index + 1,
+                      child: Text(
+                        T.get(payments[index]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (index) {
+                  if (index == null) return;
+                  _selectPaymentAccount(
+                    index,
+                    slideDirection: index >= selectedIndex ? 1 : -1,
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardSkeleton() {
+    final skeletonColor = Theme.of(context).colorScheme.surfaceContainerHighest;
+    Widget block({double? width, required double height, double radius = 8}) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: skeletonColor,
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+      children: [
+        Center(child: block(width: 176, height: 176, radius: 88)),
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            for (var index = 0; index < 3; index++) ...[
+              if (index > 0) const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    block(height: 12, width: 62),
+                    const SizedBox(height: 10),
+                    block(height: 22),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 28),
+        block(height: 18, width: 150),
+        const SizedBox(height: 12),
+        for (var index = 0; index < 5; index++) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: skeletonColor.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                block(width: 42, height: 42, radius: 21),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      block(height: 14, width: 132),
+                      const SizedBox(height: 8),
+                      block(height: 11, width: 92),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                block(height: 16, width: 68),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<String>(
       valueListenable: languageNotifier,
       builder: (context, currentLang, child) {
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(T.get('appTitle')),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.swap_horiz),
-                tooltip: T.get('transferBetweenAccounts'),
-                onPressed: () => _showTransferSheet(context),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings),
-                tooltip: T.get('settings'),
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const SettingsScreen()),
-                  );
-                  _loadCustomSettings();
-                },
-              ),
-            ],
-          ),
-          body: SafeArea(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _transactionsCollection
-                  .orderBy('date', descending: true)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text(T.get('loadError')));
-                }
-
-                final allTransactions = snapshot.data!.docs
-                    .map((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      data['id'] = doc.id;
-                      return TransactionModel.fromMap(data);
-                    })
-                    .where((tx) => !_pendingDeleteIds.contains(tx.id))
-                    .toList();
-
-                return _buildContent(allTransactions);
-              },
+        return Listener(
+          onPointerDown: (_) {
+            _focusedCategoryAtPointerDown = _selectedChartCategory;
+            if (_selectedChartCategory != null) {
+              setState(() => _selectedChartCategory = null);
+            }
+          },
+          onPointerCancel: (_) => _focusedCategoryAtPointerDown = null,
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(T.get('appTitle')),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.swap_horiz),
+                  tooltip: T.get('transferBetweenAccounts'),
+                  onPressed: () => _showTransferSheet(context),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  tooltip: T.get('settings'),
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const SettingsScreen()),
+                    );
+                    if (mounted) {
+                      setState(() => _selectedPaymentPage = 0);
+                    }
+                    _loadCustomSettings();
+                  },
+                ),
+              ],
             ),
-          ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () => _showAddTransactionSheet(context),
-            child: const Icon(Icons.add),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  _buildPaymentPageSelector(_paymentIcons.keys.toList()),
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: _transactionsStream,
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return Center(child: Text(T.get('loadError')));
+                        }
+                        if (!snapshot.hasData) {
+                          return _buildDashboardSkeleton();
+                        }
+
+                        final allTransactions = snapshot.data!.docs
+                            .map((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              data['id'] = doc.id;
+                              return TransactionModel.fromMap(data);
+                            })
+                            .where((tx) => !_pendingDeleteIds.contains(tx.id))
+                            .toList();
+
+                        final payments = _paymentIcons.keys.toList();
+                        final selectedIndex = _selectedPaymentPage
+                            .clamp(0, payments.length)
+                            .toInt();
+                        return _buildContent(
+                          allTransactions,
+                          paymentScope: selectedIndex == 0
+                              ? null
+                              : payments[selectedIndex - 1],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            floatingActionButton: FloatingActionButton(
+              onPressed: () => _showAddTransactionSheet(context),
+              child: const Icon(Icons.add),
+            ),
           ),
         );
       },

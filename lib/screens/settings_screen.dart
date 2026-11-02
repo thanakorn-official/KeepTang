@@ -426,7 +426,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (oldCategory != text) {
                           _categoryIconCodes.remove(oldCategory);
                           _categoryColorValues.remove(oldCategory);
-                          _updateTransactionsCategory(oldCategory!, text);
+                          _updateTransactionsCategory(oldCategory, text);
                         }
                       } else if (!_categories.contains(text)) {
                         _categories.add(text);
@@ -562,12 +562,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: () async {
                   final inputText = controller.text.trim();
                   final text = isEditing && inputText == initialPaymentLabel
-                      ? oldPayment!
+                      ? oldPayment
                       : inputText;
                   if (text.isNotEmpty) {
                     setState(() {
                       if (isEditing) {
-                        final index = _payments.indexOf(oldPayment!);
+                        final index = _payments.indexOf(oldPayment);
                         if (index != -1) _payments[index] = text;
                         if (oldPayment != text) {
                           _paymentIconCodes.remove(oldPayment);
@@ -646,7 +646,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           builder: (context, setModalState) {
             return Scaffold(
               appBar: AppBar(title: Text(T.get('manageCategories'))),
-              body: ListView.builder(
+              body: ReorderableListView.builder(
+                buildDefaultDragHandles: false,
+                onReorderItem: (oldIndex, newIndex) async {
+                  setState(() {
+                    final category = _categories.removeAt(oldIndex);
+                    _categories.insert(newIndex, category);
+                  });
+                  await _saveCategories();
+                  setModalState(() {});
+                },
                 padding: EdgeInsets.only(
                   left: 16,
                   right: 16,
@@ -705,6 +714,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: Text(T.get(cat),
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
+                        trailing: ReorderableDelayedDragStartListener(
+                          index: index,
+                          child: const Icon(Icons.drag_handle),
+                        ),
                         onTap: () => _showCategoryDialog(setModalState,
                             oldCategory: cat),
                       ),
@@ -736,7 +749,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           builder: (context, setModalState) {
             return Scaffold(
               appBar: AppBar(title: Text(T.get('managePayments'))),
-              body: ListView.builder(
+              body: ReorderableListView.builder(
+                buildDefaultDragHandles: false,
+                onReorderItem: (oldIndex, newIndex) async {
+                  setState(() {
+                    final payment = _payments.removeAt(oldIndex);
+                    _payments.insert(newIndex, payment);
+                  });
+                  await _savePayments();
+                  setModalState(() {});
+                },
                 padding: EdgeInsets.only(
                   left: 16,
                   right: 16,
@@ -795,6 +817,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: Text(T.get(pay),
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
+                        trailing: ReorderableDelayedDragStartListener(
+                          index: index,
+                          child: const Icon(Icons.drag_handle),
+                        ),
                         onTap: () =>
                             _showPaymentDialog(setModalState, oldPayment: pay),
                       ),
