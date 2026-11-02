@@ -12,6 +12,7 @@ class TransactionModel {
   final String branchCode;
   final String invoiceNo;
   final String customerName;
+  final bool hiddenFromDashboard;
 
   TransactionModel({
     required this.id,
@@ -27,6 +28,7 @@ class TransactionModel {
     this.branchCode = '',
     String? invoiceNo,
     String? customerName,
+    this.hiddenFromDashboard = false,
   })  : vatAmount = vatAmount ?? amount - (amount / 1.07),
         invoiceNo = invoiceNo ?? id,
         customerName = customerName ?? title;
@@ -47,6 +49,7 @@ class TransactionModel {
       branchCode: map['branchCode'] ?? '',
       invoiceNo: map['invoiceNo'],
       customerName: map['customerName'],
+      hiddenFromDashboard: map['hiddenFromDashboard'] == true,
     );
   }
 
@@ -63,6 +66,7 @@ class TransactionModel {
       'branchCode': branchCode,
       'invoiceNo': invoiceNo,
       'customerName': customerName,
+      'hiddenFromDashboard': hiddenFromDashboard,
       if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
     };
   }

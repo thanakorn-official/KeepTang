@@ -1659,7 +1659,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             20,
             12,
             20,
-            MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
+            MediaQuery.viewInsetsOf(sheetContext).bottom +
+                MediaQuery.viewPaddingOf(sheetContext).bottom +
+                24,
           ),
           child: SingleChildScrollView(
             child: Column(
@@ -2224,7 +2226,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 5),
             margin: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
             backgroundColor: Colors.black.withValues(alpha: 0.85),
             content: Text(
@@ -2250,6 +2252,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  Future<void> _hideTransactionFromDashboard(
+      BuildContext context, TransactionModel tx,
+      {required bool hidden}) async {
+    try {
+      await _transactionsCollection
+          .doc(tx.id)
+          .update({'hiddenFromDashboard': hidden});
+      if (!context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+              '${T.get(hidden ? 'hiddenFromDashboard' : 'shownOnDashboard')}: ${tx.title}'),
+          action: SnackBarAction(
+            label: T.get('undo'),
+            onPressed: () => _transactionsCollection
+                .doc(tx.id)
+                .update({'hiddenFromDashboard': !hidden}),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(T.get('saveError'))),
+      );
+    }
+  }
+
   Widget _buildTransactionItem(BuildContext context, TransactionModel tx) {
     final locale = languageNotifier.value == 'th' ? 'th' : 'en';
     final formattedAmount = NumberFormat('#,##0.00', locale).format(tx.amount);
@@ -2269,14 +2302,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final paymentColor =
         isPaymentValid ? _paymentColorOf(tx.paymentMethod) : Colors.red;
     final isSelected = _selectedTransactionIds.contains(tx.id);
+    final isHidden = tx.hiddenFromDashboard;
     final isSelecting = _selectedTransactionIds.isNotEmpty;
     final colors = Theme.of(context).colorScheme;
+    final mutedColor = colors.onSurfaceVariant.withValues(alpha: 0.68);
 
     return Dismissible(
       key: ValueKey(tx.id),
       direction:
-          isSelecting ? DismissDirection.none : DismissDirection.endToStart,
+          isSelecting ? DismissDirection.none : DismissDirection.horizontal,
       background: Container(
+        color: colors.surfaceContainerHighest,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        child: Row(
+          children: [
+            Icon(
+              isHidden
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
+            Text(T.get(isHidden ? 'showOnDashboard' : 'hideFromDashboard'),
+                style: TextStyle(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+      secondaryBackground: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
@@ -2291,7 +2346,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
       ),
-      onDismissed: (_) => _handleDelete(context, tx),
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) return true;
+        return await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: Text(T.get('deleteConfirmTitle')),
+                content: Text(T.get('deleteConfirmContent')),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: Text(T.get('cancel')),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: Text(T.get('delete')),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+      },
+      onDismissed: (direction) {
+        if (direction == DismissDirection.startToEnd) {
+          _hideTransactionFromDashboard(context, tx, hidden: !isHidden);
+        } else {
+          _handleDelete(context, tx);
+        }
+      },
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onLongPress: () => _toggleTransactionSelection(tx),
@@ -2304,7 +2386,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         },
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          color: isSelected ? colors.primaryContainer : null,
+          color: isHidden
+              ? colors.surfaceContainerHighest.withValues(alpha: 0.72)
+              : (isSelected ? colors.primaryContainer : null),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: isSelected
@@ -2313,24 +2397,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: isSelected
+              backgroundColor: isSelected && !isHidden
                   ? colors.primary
-                  : categoryColor.withValues(alpha: 0.2),
+                  : mutedColor.withValues(alpha: 0.16),
               child: Icon(
-                isSelected ? Icons.check_rounded : categoryIcon,
-                color: isSelected ? colors.onPrimary : categoryColor,
+                isSelected && !isHidden ? Icons.check_rounded : categoryIcon,
+                color: isHidden
+                    ? mutedColor
+                    : (isSelected ? colors.onPrimary : categoryColor),
               ),
             ),
-            title: Text(tx.title,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(
+              tx.title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isHidden ? mutedColor : null,
+              ),
+            ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(formattedDate),
+                Text(formattedDate,
+                    style: isHidden ? TextStyle(color: mutedColor) : null),
                 const SizedBox(height: 2),
                 Row(
                   children: [
-                    Icon(categoryIcon, size: 14, color: categoryColor),
+                    Icon(categoryIcon,
+                        size: 14, color: isHidden ? mutedColor : categoryColor),
                     const SizedBox(width: 4),
                     Text(
                       tx.category == 'transfer'
@@ -2340,17 +2433,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               : tx.category),
                       style: TextStyle(
                           fontSize: 12,
-                          color: categoryColor,
+                          color: isHidden ? mutedColor : categoryColor,
                           fontWeight: FontWeight.bold),
                     ),
                     const Text(' • '),
-                    Icon(paymentIcon, size: 14, color: paymentColor),
+                    Icon(paymentIcon,
+                        size: 14, color: isHidden ? mutedColor : paymentColor),
                     const SizedBox(width: 4),
                     Text(
                       isPaymentValid
                           ? T.get(tx.paymentMethod)
                           : tx.paymentMethod,
-                      style: TextStyle(fontSize: 12, color: paymentColor),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: isHidden ? mutedColor : paymentColor),
                     ),
                   ],
                 ),
@@ -2361,14 +2457,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Icon(
                   tx.isExpense ? Icons.arrow_downward : Icons.arrow_upward,
-                  color: amountColor,
+                  color: isHidden ? mutedColor : amountColor,
                   size: 18,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '${tx.isExpense ? '-' : '+'}$formattedAmount ฿',
                   style: TextStyle(
-                      color: amountColor,
+                      color: isHidden ? mutedColor : amountColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 16),
                 ),
@@ -2390,9 +2486,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _cachedAccountSource = allTransactions;
       _cachedAccountScope = paymentScope;
       _cachedAccountTransactions = paymentScope == null
-          ? allTransactions
+          ? allTransactions.where((tx) => !tx.hiddenFromDashboard).toList()
           : allTransactions
-              .where((tx) => tx.paymentMethod == paymentScope)
+              .where((tx) =>
+                  tx.paymentMethod == paymentScope && !tx.hiddenFromDashboard)
               .toList();
       _cachedGroupSource = null;
     }
@@ -2441,6 +2538,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final selectedTransactions = _selectedTransactionIds
         .map((id) => _cachedTransactionsById[id])
         .whereType<TransactionModel>()
+        .where((tx) => !tx.hiddenFromDashboard)
         .where((tx) => paymentScope == null || tx.paymentMethod == paymentScope)
         .toList();
     final allFilteredTx =
