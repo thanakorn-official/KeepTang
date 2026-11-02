@@ -3,7 +3,7 @@
     <application
         android:label="KeepTang"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/keeptang_icon">
         <activity
             android:name=".MainActivity"
             android:exported="true"
