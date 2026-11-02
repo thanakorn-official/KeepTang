@@ -20,15 +20,21 @@
 
 ## ภาพจากแอป
 
-| ภาพรวมการเงิน | รายการรายรับ–รายจ่าย |
+| Dashboard แยกบัญชี | Dashboard ธีมสว่างและมืด |
 |:---:|:---:|
-| ![หน้า Dashboard ของ KeepTang](./screenshot/dashboard.png) | ![หน้ารายการรายรับและรายจ่าย](./screenshot/transactions.png) |
+| ![Dashboard แยกบัญชีของ KeepTang](./screenshot/dashboard-account.jpg) | ![Dashboard ในธีมสว่างและมืด](./screenshot/dashboard-theme.jpg) |
 
-| ตัวกรองและเลือกหลายรายการ | ตั้งค่าแอป |
+| ตัวกรองรายการ | ตั้งค่าแอป |
 |:---:|:---:|
-| ![หน้าตัวกรองและการเลือกหลายรายการ](./screenshot/filters.png) | ![หน้าตั้งค่า KeepTang](./screenshot/settings.png) |
+| ![หน้าตัวกรอง KeepTang](./screenshot/filters.jpg) | ![หน้าตั้งค่า KeepTang](./screenshot/settings.jpg) |
 
-> เพิ่มภาพหน้าจอที่ตรวจแล้วว่าไม่มีข้อมูลส่วนตัวไว้ใน `screenshot/` โดยใช้ชื่อ `dashboard.png`, `transactions.png`, `filters.png` และ `settings.png` ภาพอื่นในโฟลเดอร์นี้จะถูก ignore โดยค่าเริ่มต้น
+| เพิ่มรายการ | จัดการหมวดหมู่ |
+|:---:|:---:|
+| ![หน้าฟอร์มเพิ่มรายการ](./screenshot/transaction-form.jpg) | ![หน้าจัดการหมวดหมู่](./screenshot/categories.jpg) |
+
+| เลือกหมวดหมู่บน Dashboard | โอนเงินระหว่างบัญชี |
+|:---:|:---:|
+| ![Dashboard เมื่อเลือกหมวดหมู่](./screenshot/category-focus.jpg) | ![หน้าโอนเงินระหว่างบัญชี](./screenshot/transfer.jpg) |
 
 ## จัดการเงินให้ง่ายขึ้นในทุกวัน
 
@@ -56,7 +62,6 @@ KeepTang คือแอปจดรายรับและรายจ่า�
 | **Firebase Core · Cloud Firestore** | เชื่อมต่อ Firebase และจัดเก็บข้อมูลรายการ |
 | **SharedPreferences** | จดจำการตั้งค่าบนเครื่อง เช่น ภาษาและธีม |
 | **FL Chart** | แสดงกราฟสรุปข้อมูลบน Dashboard |
-| **CSV · PDF · Share Plus** | สร้างและแชร์ไฟล์รายงาน |
 
 ## สิ่งที่ได้เรียนรู้จากการพัฒนา
 
@@ -66,17 +71,9 @@ KeepTang คือแอปจดรายรับและรายจ่า�
 
 - **GitHub:** [thanakorn-official](https://github.com/thanakorn-official)
 - **Repository:** [KeepTang](https://github.com/thanakorn-official/KeepTang)
-- **Portfolio:** [เพิ่มลิงก์ Portfolio](#)
-- **LinkedIn:** [เพิ่มลิงก์ LinkedIn](#)
 
 ---
 
 ### หมายเหตุเรื่องข้อมูลและความปลอดภัย
 
 KeepTang ใช้ Guest ID ที่จัดเก็บไว้บนอุปกรณ์ และยังไม่มีระบบบัญชีสำหรับกู้คืนข้อมูลข้ามอุปกรณ์ นอกจากนี้ `firestore.rules` ใน repository ปัจจุบันอนุญาตให้อ่านและเขียนข้อมูลโดยไม่ยืนยันตัวตน โปรเจกต์นี้จึงเหมาะสำหรับการสาธิตและทดลองเท่านั้น ควรเพิ่มระบบยืนยันตัวตนและปรับ Firestore Security Rules ก่อนใช้กับข้อมูลการเงินจริงหรือเปิดให้บริการสาธารณะ
-
-<div align="center">
-
-ทำด้วย Flutter และความตั้งใจอยากให้การจดเงินเป็นเรื่องง่าย 💙
-
-</div>
