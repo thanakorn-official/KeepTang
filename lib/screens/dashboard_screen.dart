@@ -426,6 +426,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       });
     }
+    const unspecified = '\u0e44\u0e21\u0e48\u0e23\u0e30\u0e1a\u0e38';
+    _categoryIcons.putIfAbsent(unspecified, () => Icons.help_outline);
+    _categoryColors.putIfAbsent(unspecified, () => Colors.blueGrey);
+    _paymentIcons.putIfAbsent(unspecified, () => Icons.help_outline);
+    _paymentColors.putIfAbsent(unspecified, () => Colors.blueGrey);
   }
 
   Color _colorOf(String category) {
@@ -784,7 +789,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               Icon(_paymentIconOf(method),
                                   color: _paymentColorOf(method), size: 20),
                               const SizedBox(width: 8),
-                              Text(T.get(method)),
+                              Text(method),
                             ],
                           ),
                         );
@@ -806,7 +811,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               Icon(_paymentIconOf(method),
                                   color: _paymentColorOf(method), size: 20),
                               const SizedBox(width: 8),
-                              Text(T.get(method)),
+                              Text(method),
                             ],
                           ),
                         );
@@ -1031,11 +1036,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _showFilterPanel() {
     final categoryItems = <String, String>{
-      for (final category in _categoryIcons.keys) category: T.get(category),
+      for (final category in _categoryIcons.keys) category: category,
       'transfer': T.get('transfer'),
     };
     final paymentItems = <String, String>{
-      for (final payment in _paymentIcons.keys) payment: T.get(payment),
+      for (final payment in _paymentIcons.keys) payment: payment,
     };
     var draftTypes = Set<String>.from(_selectedTypes);
     var draftCategories = Set<String>.from(_selectedCategories);
@@ -1520,7 +1525,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Icon(_paymentIconOf(method),
                 color: _paymentColorOf(method), size: 20),
             const SizedBox(width: 8),
-            Text(T.get(method)),
+            Text(method),
           ],
         ),
       );
@@ -2264,7 +2269,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .closed
         .then((reason) {
       if (!isUndone && reason != SnackBarClosedReason.action) {
-        _transactionsCollection.doc(tx.id).delete();
+        _transactionsCollection
+            .doc(tx.id)
+            .update({'deletedAt': FieldValue.serverTimestamp()});
         _pendingDeleteIds.remove(tx.id);
       }
     });
@@ -2447,9 +2454,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(
                       tx.category == 'transfer'
                           ? T.get('transfer')
-                          : (isCategoryValid
-                              ? T.get(tx.category)
-                              : tx.category),
+                          : (isCategoryValid ? tx.category : tx.category),
                       style: TextStyle(
                           fontSize: 12,
                           color: isHidden ? mutedColor : categoryColor,
@@ -2460,9 +2465,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         size: 14, color: isHidden ? mutedColor : paymentColor),
                     const SizedBox(width: 4),
                     Text(
-                      isPaymentValid
-                          ? T.get(tx.paymentMethod)
-                          : tx.paymentMethod,
+                      tx.paymentMethod,
                       style: TextStyle(
                           fontSize: 12,
                           color: isHidden ? mutedColor : paymentColor),
@@ -2761,7 +2764,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 color: _paymentColorOf(payments[index])),
                             const SizedBox(width: 10),
                             Text(
-                              T.get(payments[index]),
+                              payments[index],
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -2912,8 +2915,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         final querySnapshot = snapshot.data!;
                         if (!identical(_cachedSnapshot, querySnapshot)) {
                           _cachedSnapshot = querySnapshot;
-                          _cachedParsedTransactions =
-                              querySnapshot.docs.map((doc) {
+                          _cachedParsedTransactions = querySnapshot.docs
+                              .where((doc) =>
+                                  (doc.data()
+                                      as Map<String, dynamic>)['deletedAt'] ==
+                                  null)
+                              .map((doc) {
                             final data = Map<String, dynamic>.from(
                                 doc.data() as Map<String, dynamic>);
                             data['id'] = doc.id;

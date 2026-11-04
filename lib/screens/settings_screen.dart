@@ -17,6 +17,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const _unspecified = '\u0e44\u0e21\u0e48\u0e23\u0e30\u0e1a\u0e38';
   List<String> _categories = [
     'อาหาร',
     'เดินทาง',
@@ -94,6 +95,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
       .doc(GuestService.guestId)
       .collection('transactions');
 
+  Future<void> _purgeExpiredTrash() async {
+    final cutoff = DateTime.now().subtract(const Duration(days: 30));
+    final snap = await _transactionsCollection
+        .where('deletedAt', isNotEqualTo: null)
+        .get();
+    final expired = snap.docs.where((d) {
+      final value = d.data() as Map<String, dynamic>;
+      final deletedAt = value['deletedAt'];
+      return deletedAt is Timestamp && deletedAt.toDate().isBefore(cutoff);
+    }).toList();
+    for (var i = 0; i < expired.length; i += 400) {
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in expired.skip(i).take(400)) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+  }
+
+  void _openTrash() {
+    _purgeExpiredTrash();
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('ถังขยะ'), actions: [
+                    IconButton(
+                        tooltip: 'ล้างถังขยะ',
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        onPressed: () async {
+                          final snap = await _transactionsCollection
+                              .where('deletedAt', isNotEqualTo: null)
+                              .get();
+                          for (var i = 0; i < snap.docs.length; i += 400) {
+                            final batch = FirebaseFirestore.instance.batch();
+                            for (final doc in snap.docs.skip(i).take(400)) {
+                              batch.delete(doc.reference);
+                            }
+                            await batch.commit();
+                          }
+                        })
+                  ]),
+                  body: StreamBuilder<QuerySnapshot>(
+                      stream: _transactionsCollection
+                          .where('deletedAt', isNotEqualTo: null)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+                        final docs = snapshot.data!.docs;
+                        if (docs.isEmpty) {
+                          return const Center(
+                              child: Text('ไม่มีรายการในถังขยะ'));
+                        }
+                        return ListView.builder(
+                            itemCount: docs.length,
+                            itemBuilder: (context, index) {
+                              final doc = docs[index];
+                              final data = doc.data() as Map<String, dynamic>;
+                              return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 5),
+                                  child: ListTile(
+                                      title:
+                                          Text(data['title']?.toString() ?? ''),
+                                      subtitle: Text(data['deletedAt']
+                                              is Timestamp
+                                          ? 'ลบเมื่อ ${(data['deletedAt'] as Timestamp).toDate().toLocal()}'
+                                          : ''),
+                                      trailing: Wrap(children: [
+                                        IconButton(
+                                            tooltip: 'กู้คืน',
+                                            icon: const Icon(Icons.restore),
+                                            onPressed: () => doc.reference
+                                                    .update({
+                                                  'deletedAt':
+                                                      FieldValue.delete()
+                                                })),
+                                        IconButton(
+                                            tooltip: 'ลบถาวร',
+                                            icon: const Icon(
+                                                Icons.delete_forever_outlined),
+                                            onPressed: () =>
+                                                doc.reference.delete())
+                                      ])));
+                            });
+                      }),
+                )));
+  }
+
   Future<void> _updateTransactionsCategory(
       String oldCategory, String newCategory) async {
     final querySnapshot = await _transactionsCollection
@@ -127,6 +220,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _categories.insert(0, _unspecified);
+    _payments.insert(0, _unspecified);
     _loadData();
   }
 
@@ -235,6 +330,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadData() async {
+    await _purgeExpiredTrash();
     final prefs = await SharedPreferences.getInstance();
 
     final customCats = prefs.getString('app_categories_list');
@@ -242,6 +338,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final List<dynamic> decoded = jsonDecode(customCats);
       setState(() {
         _categories = decoded.map((e) => e.toString()).toList();
+        if (!_categories.contains(_unspecified)) {
+          _categories.insert(0, _unspecified);
+        }
       });
     }
 
@@ -266,6 +365,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final List<dynamic> decoded = jsonDecode(customPayments);
       setState(() {
         _payments = decoded.map((e) => e.toString()).toList();
+        if (!_payments.contains(_unspecified)) {
+          _payments.insert(0, _unspecified);
+        }
       });
     }
 
@@ -450,7 +552,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showPaymentDialog(StateSetter setModalState, {String? oldPayment}) {
     final isEditing = oldPayment != null;
-    final initialPaymentLabel = isEditing ? T.get(oldPayment) : '';
+    final initialPaymentLabel = isEditing ? oldPayment : '';
     final controller = TextEditingController(text: initialPaymentLabel);
     IconData selectedIcon =
         isEditing ? _getPaymentIcon(oldPayment) : _selectablePaymentIcons.first;
@@ -561,9 +663,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ElevatedButton(
                 onPressed: () async {
                   final inputText = controller.text.trim();
-                  final text = isEditing && inputText == initialPaymentLabel
-                      ? oldPayment
-                      : inputText;
+                  final text = inputText;
                   if (text.isNotEmpty) {
                     setState(() {
                       if (isEditing) {
@@ -600,7 +700,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(T.get('deleteConfirmTitle')),
-        content: Text('${T.get('deleteConfirmContent')}${T.get(category)}'),
+        content: Text('${T.get('deleteConfirmContent')}$category'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -622,7 +722,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(T.get('deleteConfirmTitle')),
-        content: Text('${T.get('deleteConfirmContent')}${T.get(payment)}'),
+        content: Text('${T.get('deleteConfirmContent')}$payment'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -639,6 +739,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _openManageCategoriesScreen() {
+    final selected = <String>{};
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -670,6 +771,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     key: ValueKey(cat),
                     direction: DismissDirection.endToStart,
                     confirmDismiss: (direction) async {
+                      if (cat == _unspecified) return false;
                       return await _confirmDeleteCategory(cat);
                     },
                     onDismissed: (direction) async {
@@ -679,7 +781,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _categoryColorValues.remove(cat);
                       });
                       await _saveCategories();
-                      await _updateTransactionsCategory(cat, 'ไม่ระบุ');
+                      await _updateTransactionsCategory(cat, _unspecified);
                       setModalState(() {});
                     },
                     background: Container(
@@ -707,24 +809,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: catColor.withValues(alpha: 0.2),
-                          child: Icon(_getCategoryIcon(cat), color: catColor),
-                        ),
-                        title: Text(T.get(cat),
+                        title: Text(cat,
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
                         trailing: ReorderableDelayedDragStartListener(
                           index: index,
                           child: const Icon(Icons.drag_handle),
                         ),
-                        onTap: () => _showCategoryDialog(setModalState,
-                            oldCategory: cat),
+                        leading: cat == _unspecified
+                            ? const CircleAvatar(
+                                child: Icon(Icons.lock_outline))
+                            : selected.contains(cat)
+                                ? const CircleAvatar(child: Icon(Icons.check))
+                                : CircleAvatar(
+                                    backgroundColor:
+                                        catColor.withValues(alpha: 0.2),
+                                    child: Icon(_getCategoryIcon(cat),
+                                        color: catColor)),
+                        onLongPress: cat == _unspecified
+                            ? null
+                            : () => setModalState(() => selected.add(cat)),
+                        onTap: cat == _unspecified
+                            ? null
+                            : selected.isNotEmpty
+                                ? () => setModalState(() =>
+                                    selected.contains(cat)
+                                        ? selected.remove(cat)
+                                        : selected.add(cat))
+                                : () => _showCategoryDialog(setModalState,
+                                    oldCategory: cat),
                       ),
                     ),
                   );
                 },
               ),
+              bottomNavigationBar: selected.isEmpty
+                  ? null
+                  : SafeArea(
+                      child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(children: [
+                            Expanded(
+                                child: Text(
+                                    '${selected.length} ${T.get('selectedTransactions')}')),
+                            TextButton(
+                                onPressed: () => setModalState(selected.clear),
+                                child: Text(T.get('cancel'))),
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                                onPressed: () async {
+                                  final remove = selected.toList();
+                                  for (final cat in remove) {
+                                    await _updateTransactionsCategory(
+                                        cat, _unspecified);
+                                    _categories.remove(cat);
+                                    _categoryIconCodes.remove(cat);
+                                    _categoryColorValues.remove(cat);
+                                  }
+                                  selected.clear();
+                                  await _saveCategories();
+                                  setModalState(() {});
+                                },
+                                icon: const Icon(Icons.delete_outline),
+                                label: Text(T.get('delete'))),
+                          ])),
+                    ),
               floatingActionButton: Padding(
                 padding: EdgeInsets.only(
                     bottom: MediaQuery.of(context).padding.bottom + 8),
@@ -742,6 +891,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _openManagePaymentsScreen() {
+    final selected = <String>{};
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -773,6 +923,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     key: ValueKey(pay),
                     direction: DismissDirection.endToStart,
                     confirmDismiss: (direction) async {
+                      if (pay == _unspecified) return false;
                       return await _confirmDeletePayment(pay);
                     },
                     onDismissed: (direction) async {
@@ -782,7 +933,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _paymentColorValues.remove(pay);
                       });
                       await _savePayments();
-                      await _updateTransactionsPayment(pay, 'ไม่ระบุ');
+                      await _updateTransactionsPayment(pay, _unspecified);
                       setModalState(() {});
                     },
                     background: Container(
@@ -810,24 +961,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                       child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: payColor.withValues(alpha: 0.2),
-                          child: Icon(_getPaymentIcon(pay), color: payColor),
-                        ),
-                        title: Text(T.get(pay),
+                        title: Text(pay,
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
                         trailing: ReorderableDelayedDragStartListener(
                           index: index,
                           child: const Icon(Icons.drag_handle),
                         ),
-                        onTap: () =>
-                            _showPaymentDialog(setModalState, oldPayment: pay),
+                        leading: pay == _unspecified
+                            ? const CircleAvatar(
+                                child: Icon(Icons.lock_outline))
+                            : selected.contains(pay)
+                                ? const CircleAvatar(child: Icon(Icons.check))
+                                : CircleAvatar(
+                                    backgroundColor:
+                                        payColor.withValues(alpha: 0.2),
+                                    child: Icon(_getPaymentIcon(pay),
+                                        color: payColor)),
+                        onLongPress: pay == _unspecified
+                            ? null
+                            : () => setModalState(() => selected.add(pay)),
+                        onTap: pay == _unspecified
+                            ? null
+                            : selected.isNotEmpty
+                                ? () => setModalState(() =>
+                                    selected.contains(pay)
+                                        ? selected.remove(pay)
+                                        : selected.add(pay))
+                                : () => _showPaymentDialog(setModalState,
+                                    oldPayment: pay),
                       ),
                     ),
                   );
                 },
               ),
+              bottomNavigationBar: selected.isEmpty
+                  ? null
+                  : SafeArea(
+                      child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(children: [
+                            Expanded(
+                                child: Text(
+                                    '${selected.length} ${T.get('selectedTransactions')}')),
+                            TextButton(
+                                onPressed: () => setModalState(selected.clear),
+                                child: Text(T.get('cancel'))),
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                                onPressed: () async {
+                                  final remove = selected.toList();
+                                  for (final pay in remove) {
+                                    await _updateTransactionsPayment(
+                                        pay, _unspecified);
+                                    _payments.remove(pay);
+                                    _paymentIconCodes.remove(pay);
+                                    _paymentColorValues.remove(pay);
+                                  }
+                                  selected.clear();
+                                  await _savePayments();
+                                  setModalState(() {});
+                                },
+                                icon: const Icon(Icons.delete_outline),
+                                label: Text(T.get('delete'))),
+                          ])),
+                    ),
               floatingActionButton: Padding(
                 padding: EdgeInsets.only(
                     bottom: MediaQuery.of(context).padding.bottom + 8),
@@ -1012,6 +1210,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                       onTap: _openManagePaymentsScreen,
                     ),
+                    const Divider(height: 1),
+                    ListTile(
+                        leading: const Icon(Icons.delete_outline),
+                        title: const Text('ถังขยะ'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: _openTrash),
                     const Divider(height: 1),
                   ],
                 ),
