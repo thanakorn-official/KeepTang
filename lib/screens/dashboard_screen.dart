@@ -24,6 +24,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   static const _sortOrderOptions = ['newest', 'oldest', 'highest', 'lowest'];
 
   final ScrollController _dashboardScrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
   late final Stream<QuerySnapshot> _transactionsStream;
   QuerySnapshot? _cachedSnapshot;
   List<TransactionModel> _cachedParsedTransactions = [];
@@ -144,6 +145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _groupType = 'monthly';
   String _sortOrder = 'newest';
+  String _searchQuery = '';
   bool _sortOrderWasChanged = false;
 
   Set<String> _selectedTypes = {'income', 'expense', 'transfer'};
@@ -163,6 +165,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _dashboardScrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -201,7 +204,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required double income,
     required double expense,
     required double balance,
-    required double currentBalance,
+    required double selectedNet,
   }) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -233,10 +236,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           key: ValueKey<String>('overview-${paymentScope ?? 'all'}'),
           children: [
             const SizedBox(height: 24),
-            _buildPieChart(
-              chartTransactions,
-              currentBalance: currentBalance,
-            ),
+            _buildPieChart(chartTransactions, selectedNet: selectedNet),
             if (accountTransactions.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(32.0),
@@ -1046,6 +1046,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   color:
                       isActive ? Theme.of(context).colorScheme.primary : null),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField() {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        height: 48,
+        child: TextField(
+          controller: _searchController,
+          textInputAction: TextInputAction.search,
+          onChanged: (value) => setState(() => _searchQuery = value.trim()),
+          decoration: InputDecoration(
+            hintText: T.get('search'),
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: T.get('clearFilters'),
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  ),
+            filled: true,
+            fillColor: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: colors.outlineVariant),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: colors.primary),
+            ),
           ),
         ),
       ),
@@ -2094,7 +2138,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return false;
     }
 
-    return true;
+    return _matchesSearch(tx);
+  }
+
+  bool _matchesSearch(TransactionModel tx) {
+    final query = _searchQuery.toLowerCase();
+    if (query.isEmpty) return true;
+
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
+    final searchableValues = [
+      tx.title,
+      tx.category,
+      tx.paymentMethod,
+      tx.amount.toString(),
+      NumberFormat.decimalPattern(locale).format(tx.amount),
+      DateFormat('dd/MM/yyyy', locale).format(tx.date),
+      DateFormat('yyyy-MM-dd').format(tx.date),
+      tx.id,
+      tx.invoiceNo,
+      tx.customerName,
+      tx.taxId,
+      tx.branchCode,
+    ];
+
+    if (searchableValues.any(
+      (value) => value.toLowerCase().contains(query),
+    )) {
+      return true;
+    }
+
+    final normalizedQuery = query.replaceAll(RegExp(r'[,฿$ ]'), '');
+    if (normalizedQuery.isEmpty) return false;
+    final searchableAmounts = [
+      tx.amount.toString(),
+      tx.amount.toStringAsFixed(2),
+      NumberFormat.decimalPattern(locale).format(tx.amount),
+    ];
+    return searchableAmounts.any(
+      (amount) => amount.replaceAll(',', '').contains(normalizedQuery),
+    );
   }
 
   List<TransactionModel> _filterAndSort(
@@ -2194,7 +2276,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildPieChart(
     List<TransactionModel> transactions, {
-    required double currentBalance,
+    required double selectedNet,
   }) {
     final Map<String, double> categoryTotals = {};
     for (final tx in transactions) {
@@ -2252,14 +2334,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     final locale = languageNotifier.value == 'th' ? 'th' : 'en';
-    final centerContent = selectedCategory == null
+    final centerContent = _selectedTransactionIds.isNotEmpty
         ? Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                T.get(_selectedTransactionIds.isNotEmpty
-                    ? 'selectedNet'
-                    : 'currentBalance'),
+                T.get('selectedNet'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 10, color: Colors.grey),
@@ -2272,52 +2352,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     locale: locale,
                     symbol: '฿',
                     decimalDigits: 2,
-                  ).format(currentBalance),
+                  ).format(selectedNet),
                   style: const TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
             ],
           )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(_iconOf(selectedCategory),
-                  size: 16, color: _colorOf(selectedCategory)),
-              const SizedBox(height: 2),
-              Text(
-                selectedCategory,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  NumberFormat.currency(
-                    locale: locale,
-                    symbol: '฿',
-                    decimalDigits: 2,
-                  ).format(selectedTotal),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+        : selectedCategory == null
+            ? const SizedBox.shrink()
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_iconOf(selectedCategory),
+                      size: 16, color: _colorOf(selectedCategory)),
+                  const SizedBox(height: 2),
+                  Text(
+                    selectedCategory,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ),
-              Text(
-                '${selectedPercentage.toStringAsFixed(1)}%',
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
-              ),
-            ],
-          );
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '${NumberFormat.currency(
+                        locale: locale,
+                        symbol: '฿',
+                        decimalDigits: 2,
+                      ).format(selectedTotal)} · ${selectedPercentage.toStringAsFixed(1)}%',
+                      style: const TextStyle(fontSize: 9, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              );
 
     return Column(
       children: [
@@ -2374,7 +2449,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   child: SizedBox(
                     key: ValueKey<String>(
-                      selectedCategory ?? 'current-balance',
+                      _selectedTransactionIds.isNotEmpty
+                          ? 'selected-net'
+                          : 'category-${selectedCategory ?? 'all'}',
                     ),
                     width: 104,
                     child: centerContent,
@@ -2694,6 +2771,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       categoryKey,
       _paymentFilterActive,
       paymentKey,
+      _searchQuery.toLowerCase(),
+      languageNotifier.value,
     ]);
     if (!identical(_cachedVisibleSource, allTransactions) ||
         _cachedVisibleKey != visibleKey) {
@@ -2732,10 +2811,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .where((tx) => tx.isExpense)
         .fold(0.0, (total, tx) => total + tx.amount);
     final realBalance = realIncome - realExpense;
-    final currentBalance = accountTransactions.fold<double>(
-      0,
-      (total, tx) => total + (tx.isExpense ? -tx.amount : tx.amount),
-    );
     final selectedNet = selectedTransactions.fold<double>(
       0,
       (total, tx) => total + (tx.isExpense ? -tx.amount : tx.amount),
@@ -2773,7 +2848,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 income: totalIncome,
                 expense: totalExpense,
                 balance: realBalance,
-                currentBalance: isSelecting ? selectedNet : currentBalance,
+                selectedNet: isSelecting ? selectedNet : 0,
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -2794,6 +2869,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 8),
               _buildFilterBar(),
+              const SizedBox(height: 8),
+              _buildSearchField(),
               const SizedBox(height: 8),
             ],
           ),
@@ -2900,6 +2977,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildUserProfileHeader({required double? currentBalance}) {
+    final username = GuestService.username?.trim() ?? '';
+    final displayName = username.isEmpty ? T.get('guestMode') : username;
+    final colors = Theme.of(context).colorScheme;
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          CircleAvatar(
+            radius: 26,
+            backgroundColor: colors.primaryContainer,
+            foregroundColor: colors.onPrimaryContainer,
+            child: username.isEmpty
+                ? const Icon(Icons.person_outline)
+                : Text(
+                    String.fromCharCode(username.runes.first).toUpperCase(),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  T.get('currentBalance'),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                ),
+                Text(
+                  currentBalance == null
+                      ? '--'
+                      : NumberFormat.currency(
+                          locale: locale,
+                          symbol: '฿',
+                          decimalDigits: 2,
+                        ).format(currentBalance),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        height: 1.1,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3016,16 +3161,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
             body: SafeArea(
               child: Column(
                 children: [
-                  _buildPaymentPageSelector(_paymentIcons.keys.toList()),
                   Expanded(
                     child: StreamBuilder<QuerySnapshot>(
                       stream: _transactionsStream,
                       builder: (context, snapshot) {
+                        final paymentSelector = _buildPaymentPageSelector(
+                          _paymentIcons.keys.toList(),
+                        );
                         if (snapshot.hasError) {
-                          return Center(child: Text(T.get('loadError')));
+                          return Column(
+                            children: [
+                              _buildUserProfileHeader(currentBalance: null),
+                              paymentSelector,
+                              Expanded(
+                                child: Center(child: Text(T.get('loadError'))),
+                              ),
+                            ],
+                          );
                         }
                         if (!snapshot.hasData) {
-                          return _buildDashboardSkeleton();
+                          return Column(
+                            children: [
+                              _buildUserProfileHeader(currentBalance: null),
+                              paymentSelector,
+                              Expanded(child: _buildDashboardSkeleton()),
+                            ],
+                          );
                         }
 
                         final querySnapshot = snapshot.data!;
@@ -3064,11 +3225,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         final selectedIndex = _selectedPaymentPage
                             .clamp(0, payments.length)
                             .toInt();
-                        return _buildContent(
-                          allTransactions,
-                          paymentScope: selectedIndex == 0
-                              ? null
-                              : payments[selectedIndex - 1],
+                        final paymentScope = selectedIndex == 0
+                            ? null
+                            : payments[selectedIndex - 1];
+                        final accountTransactions = allTransactions.where(
+                          (tx) =>
+                              !tx.hiddenFromDashboard &&
+                              (paymentScope == null ||
+                                  tx.paymentMethod == paymentScope),
+                        );
+                        final currentBalance = accountTransactions.fold<double>(
+                          0,
+                          (total, tx) =>
+                              total + (tx.isExpense ? -tx.amount : tx.amount),
+                        );
+                        return Column(
+                          children: [
+                            _buildUserProfileHeader(
+                              currentBalance: currentBalance,
+                            ),
+                            paymentSelector,
+                            Expanded(
+                              child: _buildContent(
+                                allTransactions,
+                                paymentScope: paymentScope,
+                              ),
+                            ),
+                          ],
                         );
                       },
                     ),
