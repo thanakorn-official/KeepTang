@@ -2433,15 +2433,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       await _transactionsCollection
           .doc(tx.id)
           .update({'hiddenFromDashboard': hidden});
-      if (!context.mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(SnackBar(
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-        content: Text(
-            '${T.get(hidden ? 'hiddenFromDashboard' : 'shownOnDashboard')}: ${tx.title}'),
-      ));
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
