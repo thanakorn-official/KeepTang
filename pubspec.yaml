@@ -27,22 +27,20 @@ dependencies:
   image_picker: ^1.2.4
   google_mlkit_text_recognition: ^0.17.1
   photo_manager: ^3.12.0
+  flutter_launcher_icons: ^0.14.4
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
-  flutter_launcher_icons: any
-
 flutter:
   uses-material-design: true
   assets:
-    - assets/logo.png
-    - assets/splash_cat_face.png
+    - assets/app_icon.png
+    - assets/app_icon_foreground.png
     - assets/splash_bill_cat_theme.png
     - assets/splash_bill_cat_theme_dark.png
     - assets/splash_bill_base.png
     - assets/splash_bill_base_dark.png
-    - assets/splash_cat_peek.png
 
 flutter_launcher_icons:
   android: "keeptang_icon"
@@ -68,13 +66,13 @@ flutter_launcher_icons:
 
 flutter_native_splash:
   color: "#ffffff"
-  image: "assets/logo.png"
+  image: "assets/app_icon.png"
   color_dark: "#121212"
-  image_dark: "assets/logo_dark.png"
+  image_dark: "assets/app_icon.png"
   android: true
   ios: true
   android_12:
     color: "#ffffff"
-    image: "assets/logo.png"
+    image: "assets/app_icon.png"
     color_dark: "#121212"
-    image_dark: "assets/logo_dark.png"
+    image_dark: "assets/app_icon.png"
