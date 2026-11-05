@@ -113,11 +113,7 @@ ui-debug.log
 # captures with these names may be committed for the README.
 /screenshot/*
 !/screenshot/
-!/screenshot/dashboard-account.jpg
-!/screenshot/dashboard-theme.jpg
-!/screenshot/transaction-form.jpg
-!/screenshot/filters.jpg
-!/screenshot/categories.jpg
-!/screenshot/category-focus.jpg
-!/screenshot/settings.jpg
-!/screenshot/transfer.jpg
+!/screenshot/Dashboard.png
+!/screenshot/AddTransaction.png
+!/screenshot/SlipAdd.png
+!/screenshot/Search.png
