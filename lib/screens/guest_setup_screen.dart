@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart';
 import '../services/guest_service.dart';
@@ -14,9 +17,32 @@ class GuestSetupScreen extends StatefulWidget {
 }
 
 class _GuestSetupScreenState extends State<GuestSetupScreen> {
+  static const _unspecified = '\u0e44\u0e21\u0e48\u0e23\u0e30\u0e1a\u0e38';
+  static const _starterCategories = [
+    'อาหาร',
+    'เดินทาง',
+    'ช้อปปิ้ง',
+    'บิล/ค่าใช้จ่าย',
+    'เงินเดือน/รายรับ',
+    'ความบันเทิง',
+    'สุขภาพ/พยาบาล',
+    'ที่อยู่อาศัย',
+    'การศึกษา',
+    'การลงทุน',
+    'อื่นๆ',
+  ];
   final _controller = TextEditingController();
+  final _firstPaymentController = TextEditingController();
+  final Set<String> _selectedCategories = {};
   bool _busy = false;
   bool _isRestoring = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _firstPaymentController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -109,6 +135,25 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
       );
       return;
     }
+    final firstPayment = _firstPaymentController.text.trim();
+    if (!_isRestoring && firstPayment.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(T.get('firstPaymentRequired'))),
+      );
+      return;
+    }
+    if (!_isRestoring && firstPayment == _unspecified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(T.get('firstPaymentReserved'))),
+      );
+      return;
+    }
+    if (!_isRestoring && _selectedCategories.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(T.get('starterCategoryRequired'))),
+      );
+      return;
+    }
 
     setState(() => _busy = true);
 
@@ -117,6 +162,17 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
       await GuestService.restoreCustomSettings();
     } else {
       await GuestService.setUsername(inputVal);
+      final prefs = await SharedPreferences.getInstance();
+      final categories = _starterCategories
+          .where(_selectedCategories.contains)
+          .toList()
+        ..add(_unspecified);
+      await prefs.setString('app_categories_list', jsonEncode(categories));
+      await prefs.setString(
+        'app_payments_list',
+        jsonEncode([firstPayment, _unspecified]),
+      );
+      await GuestService.saveCustomSettings();
     }
 
     if (!mounted) return;
@@ -253,6 +309,75 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                         counterText: '',
                       ),
                     ),
+                    if (!_isRestoring) ...[
+                      const SizedBox(height: 20),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Icon(Icons.account_balance_wallet_outlined,
+                                    color: scheme.primary),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                    child: Text(T.get('firstPaymentTitle'),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w700))),
+                                const Icon(Icons.star,
+                                    size: 16, color: Colors.orange),
+                              ]),
+                              const SizedBox(height: 10),
+                              TextField(
+                                controller: _firstPaymentController,
+                                textInputAction: TextInputAction.next,
+                                maxLength: 40,
+                                decoration: InputDecoration(
+                                  labelText: T.get('firstPaymentLabel'),
+                                  prefixIcon:
+                                      const Icon(Icons.payments_outlined),
+                                  counterText: '',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(T.get('starterCategoriesTitle'),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 4),
+                              Text(T.get('starterCategoriesHint'),
+                                  style: Theme.of(context).textTheme.bodySmall),
+                              const SizedBox(height: 8),
+                              ..._starterCategories.map((category) =>
+                                  CheckboxListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    value:
+                                        _selectedCategories.contains(category),
+                                    title: Text(category),
+                                    onChanged: (checked) => setState(() {
+                                      if (checked == true) {
+                                        _selectedCategories.add(category);
+                                      } else {
+                                        _selectedCategories.remove(category);
+                                      }
+                                    }),
+                                  )),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,

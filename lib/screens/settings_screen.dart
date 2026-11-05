@@ -34,7 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'อื่นๆ'
   ];
 
-  List<String> _payments = ['cash', 'promptpay', 'truemoney', 'paotang'];
+  List<String> _payments = [];
 
   Map<String, int> _categoryIconCodes = {};
   Map<String, int> _paymentIconCodes = {};
@@ -122,174 +122,162 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _openTrash() {
     _purgeExpiredTrash();
     Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (_) => Scaffold(
-                  appBar: AppBar(title: const Text('ถังขยะ'), actions: [
-                    IconButton(
-                        tooltip: 'ล้างถังขยะ',
-                        icon: const Icon(Icons.delete_sweep_outlined),
-                        onPressed: () async {
-                          final snap = await _transactionsCollection.get();
-                          final trashDocs =
-                              snap.docs.where(_isInTrash).toList();
-                          for (var i = 0; i < trashDocs.length; i += 400) {
-                            final batch = FirebaseFirestore.instance.batch();
-                            for (final doc in trashDocs.skip(i).take(400)) {
-                              batch.delete(doc.reference);
-                            }
-                            await batch.commit();
-                          }
-                        })
-                  ]),
-                  body: StreamBuilder<QuerySnapshot>(
-                      stream: _transactionsCollection.snapshots(),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData) {
-                          return const Center(
-                              child: CircularProgressIndicator());
-                        }
-                        final docs = snapshot.data!.docs
-                            .where(_isInTrash)
-                            .toList()
-                          ..sort((a, b) {
-                            final aDeleted =
-                                (a.data() as Map<String, dynamic>)['deletedAt'];
-                            final bDeleted =
-                                (b.data() as Map<String, dynamic>)['deletedAt'];
-                            final aTime = aDeleted is Timestamp
-                                ? aDeleted.toDate()
-                                : DateTime.fromMillisecondsSinceEpoch(0);
-                            final bTime = bDeleted is Timestamp
-                                ? bDeleted.toDate()
-                                : DateTime.fromMillisecondsSinceEpoch(0);
-                            return bTime.compareTo(aTime);
-                          });
-                        if (docs.isEmpty) {
-                          return const Center(
-                              child: Text('ไม่มีรายการในถังขยะ'));
-                        }
-                        return ListView.builder(
-                            itemCount: docs.length,
-                            itemBuilder: (context, index) {
-                              final doc = docs[index];
-                              final data = doc.data() as Map<String, dynamic>;
-                              final amount =
-                                  (data['amount'] as num?)?.toDouble() ?? 0;
-                              final transactionDate = DateTime.tryParse(
-                                  data['date']?.toString() ?? '');
-                              final deletedAt = data['deletedAt'] is Timestamp
-                                  ? (data['deletedAt'] as Timestamp)
-                                      .toDate()
-                                      .toLocal()
-                                  : null;
-                              final isExpense = data['isExpense'] == true ||
-                                  data['isExpense'] == 1;
-                              return Card(
-                                  margin: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 5),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Row(children: [
-                                      CircleAvatar(
-                                        backgroundColor: (isExpense
-                                                ? Colors.red
-                                                : Colors.green)
-                                            .withValues(alpha: .12),
-                                        child: Icon(
-                                            isExpense
-                                                ? Icons.south_west
-                                                : Icons.north_east,
-                                            color: isExpense
-                                                ? Colors.red
-                                                : Colors.green),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                          child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                            Row(children: [
-                                              Expanded(
-                                                  child: Text(
-                                                      data['title']
-                                                              ?.toString() ??
-                                                          '',
-                                                      style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w700),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow
-                                                          .ellipsis)),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                  '${isExpense ? '−' : '+'}${NumberFormat('#,##0.00').format(amount)} ฿',
-                                                  style: TextStyle(
-                                                      color: isExpense
-                                                          ? Colors.red
-                                                          : Colors.green,
-                                                      fontWeight:
-                                                          FontWeight.bold))
-                                            ]),
-                                            const SizedBox(height: 5),
-                                            Text(
-                                                '${isExpense ? 'รายจ่าย' : 'รายรับ'} · ${data['category'] ?? 'ไม่ระบุ'} · ${data['paymentMethod'] ?? 'ไม่ระบุ'}',
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall),
-                                            if (transactionDate != null)
-                                              Text(
-                                                  'วันที่รายการ ${DateFormat('dd/MM/yyyy HH:mm').format(transactionDate)}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodySmall),
-                                            if (deletedAt != null)
-                                              Text(
-                                                  'ลบเมื่อ ${DateFormat('dd/MM/yyyy HH:mm').format(deletedAt)}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodySmall
-                                                      ?.copyWith(
-                                                          color:
-                                                              Theme.of(context)
-                                                                  .colorScheme
-                                                                  .error)),
-                                          ])),
-                                      const SizedBox(width: 4),
-                                      Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                                constraints:
-                                                    const BoxConstraints(),
-                                                padding:
-                                                    const EdgeInsets.all(8),
-                                                tooltip: 'กู้คืน',
-                                                icon: const Icon(Icons.restore),
-                                                onPressed: () => doc.reference
-                                                        .update({
-                                                      'deletedAt':
-                                                          FieldValue.delete()
-                                                    })),
-                                            IconButton(
-                                                constraints:
-                                                    const BoxConstraints(),
-                                                padding:
-                                                    const EdgeInsets.all(8),
-                                                tooltip: 'ลบถาวร',
-                                                icon: const Icon(Icons
-                                                    .delete_forever_outlined),
-                                                onPressed: () =>
-                                                    doc.reference.delete()),
-                                          ]),
-                                    ]),
-                                  ));
-                            });
-                      }),
-                )));
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: Text(T.get('trash')),
+            actions: [
+              IconButton(
+                tooltip: T.get('emptyTrash'),
+                icon: const Icon(Icons.delete_sweep_outlined),
+                onPressed: () async {
+                  final snapshot = await _transactionsCollection.get();
+                  final trashDocs = snapshot.docs.where(_isInTrash).toList();
+                  for (var i = 0; i < trashDocs.length; i += 400) {
+                    final batch = FirebaseFirestore.instance.batch();
+                    for (final doc in trashDocs.skip(i).take(400)) {
+                      batch.delete(doc.reference);
+                    }
+                    await batch.commit();
+                  }
+                },
+              ),
+            ],
+          ),
+          body: StreamBuilder<QuerySnapshot>(
+            stream: _transactionsCollection.snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final docs = snapshot.data!.docs.where(_isInTrash).toList()
+                ..sort((a, b) {
+                  final aDeleted = (a.data()
+                      as Map<String, dynamic>)['deletedAt'] as Timestamp;
+                  final bDeleted = (b.data()
+                      as Map<String, dynamic>)['deletedAt'] as Timestamp;
+                  return bDeleted.compareTo(aDeleted);
+                });
+              if (docs.isEmpty) {
+                return Center(child: Text(T.get('trashEmpty')));
+              }
+
+              return ListView.builder(
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final amount = (data['amount'] as num?)?.toDouble() ?? 0;
+                  final rawDate = data['date'];
+                  final transactionDate = rawDate is Timestamp
+                      ? rawDate.toDate().toLocal()
+                      : DateTime.tryParse(rawDate?.toString() ?? '')?.toLocal();
+                  final deletedAt =
+                      (data['deletedAt'] as Timestamp).toDate().toLocal();
+                  final isExpense =
+                      data['isExpense'] == true || data['isExpense'] == 1;
+                  final title = data['title']?.toString() ?? '';
+                  final category = data['category']?.toString() ?? _unspecified;
+                  final payment =
+                      data['paymentMethod']?.toString() ?? _unspecified;
+
+                  return Card(
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor:
+                                (isExpense ? Colors.red : Colors.green)
+                                    .withValues(alpha: .12),
+                            child: Icon(
+                                isExpense ? Icons.south_west : Icons.north_east,
+                                color: isExpense ? Colors.red : Colors.green),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                        child: Text(title,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w700),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis)),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '${isExpense ? '-' : '+'}${NumberFormat('#,##0.00').format(amount)} ฿',
+                                      style: TextStyle(
+                                          color: isExpense
+                                              ? Colors.red
+                                              : Colors.green,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                    '${T.get(isExpense ? 'expense' : 'income')} · $category · $payment',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall),
+                                if (transactionDate != null)
+                                  Text(
+                                      '${T.get('transactionDate')} ${DateFormat('dd/MM/yyyy HH:mm').format(transactionDate)}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall),
+                                Text(
+                                    '${T.get('deletedAt')} ${DateFormat('dd/MM/yyyy HH:mm').format(deletedAt)}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error)),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.all(8),
+                                tooltip: T.get('restore'),
+                                icon: const Icon(Icons.restore),
+                                onPressed: () => doc.reference
+                                    .update({'deletedAt': FieldValue.delete()}),
+                              ),
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.all(8),
+                                tooltip: T.get('deletePermanently'),
+                                icon: const Icon(Icons.delete_forever_outlined),
+                                onPressed: () => doc.reference.delete(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _updateTransactionsCategory(
@@ -1330,7 +1318,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const Divider(height: 1),
                     ListTile(
                         leading: const Icon(Icons.delete_outline),
-                        title: const Text('ถังขยะ'),
+                        title: Text(T.get('trash')),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: _openTrash),
                     const Divider(height: 1),

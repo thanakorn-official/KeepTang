@@ -73,17 +73,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   };
 
   final Map<String, IconData> _paymentIcons = {
-    'cash': Icons.payments_outlined,
-    'promptpay': Icons.account_balance_wallet_outlined,
-    'truemoney': Icons.account_balance_wallet,
-    'paotang': Icons.wallet,
+    '\u0e44\u0e21\u0e48\u0e23\u0e30\u0e1a\u0e38': Icons.help_outline,
   };
 
   final Map<String, Color> _paymentColors = {
-    'cash': Colors.green,
-    'promptpay': Colors.blue,
-    'truemoney': Colors.orange,
-    'paotang': Colors.lightBlue,
+    '\u0e44\u0e21\u0e48\u0e23\u0e30\u0e1a\u0e38': Colors.blueGrey,
   };
 
   final List<Color> _availableColors = [
@@ -843,7 +837,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           _transactionsCollection.add({
                             'title': noteController.text.isNotEmpty
                                 ? noteController.text
-                                : '${T.get('transferredOut')} ${T.get(toPayment)}',
+                                : '${T.get('transferredOut')} $toPayment',
                             'amount':
                                 double.tryParse(amountController.text) ?? 0.0,
                             'date': DateTime.now().toIso8601String(),
@@ -855,7 +849,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           _transactionsCollection.add({
                             'title': noteController.text.isNotEmpty
                                 ? noteController.text
-                                : '${T.get('transferredIn')} ${T.get(fromPayment)}',
+                                : '${T.get('transferredIn')} $fromPayment',
                             'amount':
                                 double.tryParse(amountController.text) ?? 0.0,
                             'date': DateTime.now().toIso8601String(),
@@ -1453,7 +1447,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Icon(_iconOf(cat), color: _colorOf(cat), size: 20),
             const SizedBox(width: 8),
-            Text(T.get(cat)),
+            Text(cat),
           ],
         ),
       );
@@ -2271,7 +2265,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   size: 16, color: _colorOf(selectedCategory)),
               const SizedBox(height: 2),
               Text(
-                T.get(selectedCategory),
+                selectedCategory,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
