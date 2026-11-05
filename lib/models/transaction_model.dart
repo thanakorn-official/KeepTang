@@ -11,6 +11,7 @@ class TransactionModel {
   final String taxId;
   final String branchCode;
   final String invoiceNo;
+  final String transactionNo;
   final String customerName;
   final bool hiddenFromDashboard;
 
@@ -27,6 +28,7 @@ class TransactionModel {
     this.taxId = '',
     this.branchCode = '',
     String? invoiceNo,
+    this.transactionNo = '',
     String? customerName,
     this.hiddenFromDashboard = false,
   })  : vatAmount = vatAmount ?? amount - (amount / 1.07),
@@ -48,6 +50,7 @@ class TransactionModel {
       taxId: map['taxId'] ?? '',
       branchCode: map['branchCode'] ?? '',
       invoiceNo: map['invoiceNo'],
+      transactionNo: map['transactionNo'] ?? '',
       customerName: map['customerName'],
       hiddenFromDashboard: map['hiddenFromDashboard'] == true,
     );
@@ -65,6 +68,7 @@ class TransactionModel {
       'taxId': taxId,
       'branchCode': branchCode,
       'invoiceNo': invoiceNo,
+      if (transactionNo.isNotEmpty) 'transactionNo': transactionNo,
       'customerName': customerName,
       'hiddenFromDashboard': hiddenFromDashboard,
       if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),

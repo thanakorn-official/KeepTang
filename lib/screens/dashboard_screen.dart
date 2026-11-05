@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import '../models/transaction_model.dart';
 import '../main.dart';
 import '../services/guest_service.dart';
+import '../services/slip_inbox_service.dart';
+import '../services/slip_ocr_parser.dart';
 import '../utils/l10n.dart';
 import 'settings_screen.dart';
 
@@ -19,7 +26,8 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
   static const _sortOrderPreferenceKey = 'dashboard_sort_order';
   static const _sortOrderOptions = ['newest', 'oldest', 'highest', 'lowest'];
 
@@ -137,6 +145,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   final Set<String> _pendingDeleteIds = {};
   final Set<String> _selectedTransactionIds = {};
+  List<SlipInboxDraft> _slipDrafts = [];
+  bool _isScanningNewSlips = false;
+  bool _isSlipInboxOpen = false;
+  bool _slipScanDeferred = false;
 
   CollectionReference get _transactionsCollection => FirebaseFirestore.instance
       .collection('guests')
@@ -157,16 +169,828 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _transactionsStream =
         _transactionsCollection.orderBy('date', descending: true).snapshots();
     _loadCustomSettings();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_initializeSlipInbox());
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      unawaited(_saveSlipScanTime());
+    } else if (state == AppLifecycleState.resumed && !_isSlipInboxOpen) {
+      unawaited(_scanForNewSlips());
+    } else if (state == AppLifecycleState.resumed) {
+      _slipScanDeferred = true;
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _dashboardScrollController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _initializeSlipInbox() async {
+    try {
+      _slipDrafts = await SlipInboxService.loadDrafts();
+      if (!mounted) return;
+      if (_slipDrafts.isNotEmpty) {
+        await _showSlipInboxSheet();
+        if (!mounted) return;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final lastScan = prefs.getString(SlipInboxService.lastScanAtKey);
+      if (lastScan == null) {
+        await prefs.setString(
+          SlipInboxService.lastScanAtKey,
+          DateTime.now().toIso8601String(),
+        );
+        return;
+      }
+      await _scanForNewSlips();
+    } catch (error) {
+      debugPrint('Could not initialize slip inbox: $error');
+      _showSlipInboxError();
+    }
+  }
+
+  Future<void> _saveSlipScanTime() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        SlipInboxService.lastScanAtKey,
+        DateTime.now().toIso8601String(),
+      );
+    } catch (error) {
+      debugPrint('Could not save slip scan time: $error');
+    }
+  }
+
+  Future<void> _scanForNewSlips() async {
+    if (_isScanningNewSlips ||
+        !mounted ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS)) {
+      return;
+    }
+
+    _isScanningNewSlips = true;
+    var addedCount = 0;
+    final scanStartedAt = DateTime.now();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastScanValue = prefs.getString(SlipInboxService.lastScanAtKey);
+      if (lastScanValue == null) {
+        await _saveSlipScanTime();
+        return;
+      }
+      final lastScan = DateTime.parse(lastScanValue);
+      final permission = await PhotoManager.requestPermissionExtend();
+      if (!permission.hasAccess) {
+        _showPhotoPermissionError();
+        return;
+      }
+
+      final paths = await PhotoManager.getAssetPathList(
+        type: RequestType.image,
+        onlyAll: true,
+        filterOption: FilterOptionGroup(
+          createTimeCond: DateTimeCond(
+            min: lastScan,
+            max: DateTime.now(),
+          ),
+          orders: const [
+            OrderOption(type: OrderOptionType.createDate, asc: false),
+          ],
+        ),
+      );
+      final processedAssetIds = await SlipInboxService.loadProcessedAssetIds();
+      final pendingAssetIds =
+          _slipDrafts.map((draft) => draft.assetId).whereType<String>().toSet();
+      if (paths.isNotEmpty) {
+        final allImages = paths.first;
+        final imageCount = await allImages.assetCountAsync;
+        final recognizer = TextRecognizer();
+        try {
+          for (var start = 0; start < imageCount; start += 40) {
+            final assets = await allImages.getAssetListRange(
+              start: start,
+              end: (start + 40).clamp(0, imageCount),
+            );
+            for (final asset in assets) {
+              if (processedAssetIds.contains(asset.id) ||
+                  pendingAssetIds.contains(asset.id)) {
+                continue;
+              }
+              final file = await asset.file;
+              if (file == null) continue;
+              final imageBytes = await file.readAsBytes();
+              final duplicateIndex = await _findQueuedImage(imageBytes);
+              if (duplicateIndex != null) {
+                final duplicate = _slipDrafts[duplicateIndex];
+                _slipDrafts[duplicateIndex] =
+                    duplicate.copyWith(assetId: asset.id);
+                pendingAssetIds.add(asset.id);
+                await SlipInboxService.saveDrafts(_slipDrafts);
+                continue;
+              }
+              final recognizedText = await _recognizeText(
+                recognizer,
+                file.path,
+              );
+              final result = SlipOcrParser.parse(recognizedText);
+              if (result.amount == null && result.transactionNumber == null) {
+                continue;
+              }
+
+              final draft = await SlipInboxService.storeDraft(
+                imageBytes: imageBytes,
+                extension: _imageExtension(file.path),
+                title: '',
+                amount: result.amount,
+                date: result.date ?? asset.createDateTime,
+                category: _categoryIcons.keys.first,
+                paymentMethod: _paymentIcons.keys.first,
+                isExpense: true,
+                transactionNo: result.transactionNumber,
+                assetId: asset.id,
+              );
+              _slipDrafts = [..._slipDrafts, draft];
+              pendingAssetIds.add(asset.id);
+              await SlipInboxService.saveDrafts(_slipDrafts);
+              addedCount++;
+            }
+          }
+        } finally {
+          await recognizer.close();
+        }
+      }
+
+      await prefs.setString(
+        SlipInboxService.lastScanAtKey,
+        scanStartedAt.toIso8601String(),
+      );
+      if (addedCount > 0 && mounted && !_isSlipInboxOpen) {
+        await _showSlipInboxSheet();
+      }
+    } catch (error) {
+      debugPrint('Could not scan new slips: $error');
+      _showSlipInboxError();
+    } finally {
+      _isScanningNewSlips = false;
+      if (_slipScanDeferred && mounted && !_isSlipInboxOpen) {
+        _slipScanDeferred = false;
+        unawaited(_scanForNewSlips());
+      }
+    }
+  }
+
+  Future<String> _recognizeText(
+    TextRecognizer recognizer,
+    String imagePath,
+  ) async {
+    final recognized = await recognizer.processImage(
+      InputImage.fromFilePath(imagePath),
+    );
+    return recognized.text;
+  }
+
+  String _imageExtension(String path) {
+    final name = path.split(Platform.pathSeparator).last;
+    final dotIndex = name.lastIndexOf('.');
+    return dotIndex < 0 ? 'jpg' : name.substring(dotIndex + 1);
+  }
+
+  Future<int?> _findQueuedImage(List<int> imageBytes) async {
+    for (var index = 0; index < _slipDrafts.length; index++) {
+      final file = File(_slipDrafts[index].imagePath);
+      if (!await file.exists()) continue;
+      final queuedBytes = await file.readAsBytes();
+      if (listEquals(queuedBytes, imageBytes)) return index;
+    }
+    return null;
+  }
+
+  void _showPhotoPermissionError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(T.get('slipPhotoPermissionDenied'))),
+    );
+  }
+
+  void _showSlipInboxError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(T.get('slipInboxFailed'))),
+    );
+  }
+
+  Future<void> _showSlipImagePreview(
+    BuildContext context,
+    String imagePath,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: double.maxFinite,
+          height: MediaQuery.sizeOf(dialogContext).height * 0.82,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.pop(dialogContext),
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: Image.file(
+                File(imagePath),
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(Icons.broken_image_outlined, size: 48),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSlipInboxSheet() async {
+    if (!mounted || _isSlipInboxOpen) return;
+    _isSlipInboxOpen = true;
+    var isProcessing = false;
+    var processingMessage = '';
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        showDragHandle: true,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setSheetState) {
+            final canScanSlips = !kIsWeb &&
+                (defaultTargetPlatform == TargetPlatform.android ||
+                    defaultTargetPlatform == TargetPlatform.iOS);
+
+            Future<void> importImage(
+              XFile image, {
+              bool keepProcessing = false,
+            }) async {
+              setSheetState(() {
+                isProcessing = true;
+                processingMessage = T.get('slipOcrProcessing');
+              });
+              try {
+                final recognized = TextRecognizer();
+                late final String text;
+                try {
+                  text = await _recognizeText(recognized, image.path);
+                } finally {
+                  await recognized.close();
+                }
+                final result = SlipOcrParser.parse(text);
+                final bytes = await image.readAsBytes();
+                final draft = await SlipInboxService.storeDraft(
+                  imageBytes: bytes,
+                  extension: _imageExtension(image.path),
+                  title: '',
+                  amount: result.amount,
+                  date: result.date ?? DateTime.now(),
+                  category: _categoryIcons.keys.first,
+                  paymentMethod: _paymentIcons.keys.first,
+                  isExpense: true,
+                  transactionNo: result.transactionNumber,
+                );
+                final updatedDrafts = [..._slipDrafts, draft];
+                await SlipInboxService.saveDrafts(updatedDrafts);
+                if (!sheetContext.mounted) return;
+                setState(() => _slipDrafts = updatedDrafts);
+                setSheetState(() {
+                  isProcessing = keepProcessing;
+                  processingMessage = result.amount == null
+                      ? T.get('slipOcrNoAmount')
+                      : T.get('slipOcrReview');
+                });
+              } catch (error) {
+                debugPrint('Could not import slip image: $error');
+                if (!sheetContext.mounted) return;
+                setSheetState(() {
+                  isProcessing = keepProcessing;
+                  processingMessage = T.get('slipOcrFailed');
+                });
+              }
+            }
+
+            Future<void> chooseGalleryImages() async {
+              try {
+                setSheetState(() {
+                  isProcessing = true;
+                  processingMessage = T.get('slipOcrProcessing');
+                });
+                final images = await ImagePicker().pickMultiImage(
+                  imageQuality: 100,
+                );
+                if (!sheetContext.mounted) return;
+                for (final image in images) {
+                  if (!sheetContext.mounted) break;
+                  await importImage(image, keepProcessing: true);
+                }
+                if (sheetContext.mounted) {
+                  setSheetState(() => isProcessing = false);
+                }
+              } catch (error) {
+                debugPrint('Could not select slip images: $error');
+                if (sheetContext.mounted) {
+                  setSheetState(() => isProcessing = false);
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    SnackBar(content: Text(T.get('slipInboxFailed'))),
+                  );
+                }
+              }
+            }
+
+            Future<void> takeSlipPhoto() async {
+              try {
+                final image = await ImagePicker().pickImage(
+                  source: ImageSource.camera,
+                  imageQuality: 100,
+                );
+                if (image != null && sheetContext.mounted) {
+                  await importImage(image);
+                }
+              } catch (error) {
+                debugPrint('Could not take slip photo: $error');
+                if (sheetContext.mounted) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    SnackBar(content: Text(T.get('slipInboxFailed'))),
+                  );
+                }
+              }
+            }
+
+            Future<void> editDraft(SlipInboxDraft draft) async {
+              final titleController = TextEditingController(text: draft.title);
+              final amountController = TextEditingController(
+                text: draft.amount?.toStringAsFixed(2) ?? '',
+              );
+              var date = draft.date;
+              var category = _categoryIcons.containsKey(draft.category)
+                  ? draft.category
+                  : _categoryIcons.keys.first;
+              var paymentMethod = _paymentIcons.containsKey(draft.paymentMethod)
+                  ? draft.paymentMethod
+                  : _paymentIcons.keys.first;
+              var isExpense = draft.isExpense;
+              try {
+                final edited = await showDialog<SlipInboxDraft>(
+                  context: sheetContext,
+                  builder: (dialogContext) => StatefulBuilder(
+                    builder: (context, setDialogState) => AlertDialog(
+                      title: Text(T.get('edit')),
+                      content: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextField(
+                              controller: titleController,
+                              decoration: InputDecoration(
+                                labelText: T.get('titleLabel'),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: amountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: T.get('amountLabel'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(T.get('transactionDateTime')),
+                            ),
+                            _buildDateTimeControls(
+                              pickerContext: context,
+                              value: date,
+                              onChanged: (value) =>
+                                  setDialogState(() => date = value),
+                            ),
+                            DropdownButtonFormField<String>(
+                              initialValue: category,
+                              decoration: InputDecoration(
+                                labelText: T.get('categoryLabel'),
+                              ),
+                              items: _categoryIcons.keys
+                                  .map((item) => DropdownMenuItem(
+                                        value: item,
+                                        child: Text(T.get(item)),
+                                      ))
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setDialogState(() => category = value);
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              initialValue: paymentMethod,
+                              decoration: InputDecoration(
+                                labelText: T.get('paymentMethodLabel'),
+                              ),
+                              items: _paymentIcons.keys
+                                  .map((item) => DropdownMenuItem(
+                                        value: item,
+                                        child: Text(T.get(item)),
+                                      ))
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setDialogState(() => paymentMethod = value);
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                ChoiceChip(
+                                  label: Text(T.get('expense')),
+                                  selected: isExpense,
+                                  onSelected: (_) =>
+                                      setDialogState(() => isExpense = true),
+                                ),
+                                ChoiceChip(
+                                  label: Text(T.get('income')),
+                                  selected: !isExpense,
+                                  onSelected: (_) =>
+                                      setDialogState(() => isExpense = false),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: Text(T.get('cancel')),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            final amount = double.tryParse(
+                              amountController.text.replaceAll(',', '').trim(),
+                            );
+                            if (amount == null ||
+                                amount <= 0 ||
+                                amount > 1000000000) {
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(
+                                  content: Text(T.get('slipInboxIncomplete')),
+                                ),
+                              );
+                              return;
+                            }
+                            Navigator.pop(
+                              dialogContext,
+                              draft.copyWith(
+                                title: titleController.text.trim(),
+                                amount: amount,
+                                date: date,
+                                category: category,
+                                paymentMethod: paymentMethod,
+                                isExpense: isExpense,
+                              ),
+                            );
+                          },
+                          child: Text(T.get('save')),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+                if (edited == null || !sheetContext.mounted) return;
+                final updatedDrafts = _slipDrafts
+                    .map((item) => item.id == draft.id ? edited : item)
+                    .toList();
+                await SlipInboxService.saveDrafts(updatedDrafts);
+                if (sheetContext.mounted) {
+                  setState(() => _slipDrafts = updatedDrafts);
+                  setSheetState(() {});
+                }
+              } catch (error) {
+                debugPrint('Could not edit slip draft: $error');
+                if (sheetContext.mounted) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    SnackBar(content: Text(T.get('saveError'))),
+                  );
+                }
+              } finally {
+                titleController.dispose();
+                amountController.dispose();
+              }
+            }
+
+            Future<void> deleteDraft(SlipInboxDraft draft) async {
+              try {
+                await SlipInboxService.removeDrafts(
+                  _slipDrafts,
+                  {draft.id},
+                );
+                if (!sheetContext.mounted) return;
+                setState(() {
+                  _slipDrafts =
+                      _slipDrafts.where((item) => item.id != draft.id).toList();
+                });
+                setSheetState(() {});
+              } catch (error) {
+                debugPrint('Could not delete slip draft: $error');
+                if (sheetContext.mounted) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    SnackBar(content: Text(T.get('saveError'))),
+                  );
+                }
+              }
+            }
+
+            Future<void> addSelectedDrafts() async {
+              final selected = _slipDrafts
+                  .where((draft) => draft.selected)
+                  .toList(growable: false);
+              if (selected.isEmpty) return;
+              if (selected.any((draft) =>
+                  draft.amount == null ||
+                  draft.amount! <= 0 ||
+                  draft.amount! > 1000000000)) {
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  SnackBar(content: Text(T.get('slipInboxIncomplete'))),
+                );
+                return;
+              }
+
+              setSheetState(() {
+                isProcessing = true;
+                processingMessage = T.get('slipInboxSaving');
+              });
+              try {
+                for (var start = 0; start < selected.length; start += 450) {
+                  final chunk = selected.skip(start).take(450).toList();
+                  final batch = FirebaseFirestore.instance.batch();
+                  final draftIds = <String>{};
+                  for (final draft in chunk) {
+                    final reference = _transactionsCollection.doc();
+                    batch.set(reference, {
+                      'title': draft.title.trim().isEmpty
+                          ? T.get('slipTransactionTitle')
+                          : draft.title.trim(),
+                      'amount': draft.amount,
+                      'date': draft.date.toIso8601String(),
+                      'isExpense': draft.isExpense ? 1 : 0,
+                      'category': draft.category,
+                      'paymentMethod': draft.paymentMethod,
+                      if (draft.transactionNo != null)
+                        'transactionNo': draft.transactionNo,
+                    });
+                    draftIds.add(draft.id);
+                  }
+                  await batch.commit();
+                  await SlipInboxService.removeDrafts(_slipDrafts, draftIds);
+                  _slipDrafts = _slipDrafts
+                      .where((draft) => !draftIds.contains(draft.id))
+                      .toList();
+                  if (sheetContext.mounted) {
+                    setState(() {});
+                    setSheetState(() {});
+                  }
+                }
+                if (sheetContext.mounted && _slipDrafts.isEmpty) {
+                  Navigator.pop(sheetContext);
+                }
+              } catch (error) {
+                debugPrint('Could not save selected slips: $error');
+                if (sheetContext.mounted) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    SnackBar(content: Text(T.get('saveError'))),
+                  );
+                }
+              } finally {
+                if (sheetContext.mounted) {
+                  setSheetState(() => isProcessing = false);
+                }
+              }
+            }
+
+            final selectedCount =
+                _slipDrafts.where((draft) => draft.selected).length;
+            return SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) => SizedBox(
+                  height: constraints.maxHeight * 0.9,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Column(
+                      children: [
+                        Text(
+                          T.get('slipInboxTitle'),
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: isProcessing || !canScanSlips
+                                    ? null
+                                    : chooseGalleryImages,
+                                icon: const Icon(Icons.photo_library_outlined),
+                                label: Text(T.get('chooseMultipleSlips')),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              tooltip: T.get('takeSlipPhoto'),
+                              onPressed: isProcessing || !canScanSlips
+                                  ? null
+                                  : takeSlipPhoto,
+                              icon: const Icon(Icons.photo_camera_outlined),
+                            ),
+                          ],
+                        ),
+                        if (isProcessing) ...[
+                          const LinearProgressIndicator(),
+                          const SizedBox(height: 6),
+                          Text(processingMessage),
+                        ],
+                        if (!canScanSlips)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(T.get('slipOcrUnsupported')),
+                          ),
+                        if (_slipDrafts.isEmpty && !isProcessing)
+                          Expanded(
+                            child: Center(child: Text(T.get('slipInboxEmpty'))),
+                          )
+                        else
+                          Expanded(
+                            child: ListView.builder(
+                              itemCount: _slipDrafts.length,
+                              itemBuilder: (context, index) {
+                                final draft = _slipDrafts[index];
+                                return Card(
+                                  child: ListTile(
+                                    leading: SizedBox(
+                                      width: 92,
+                                      child: Row(
+                                        children: [
+                                          Checkbox(
+                                            value: draft.selected,
+                                            onChanged: isProcessing
+                                                ? null
+                                                : (value) async {
+                                                    final updatedDrafts = [
+                                                      ..._slipDrafts
+                                                    ];
+                                                    updatedDrafts[index] =
+                                                        draft.copyWith(
+                                                      selected: value ?? false,
+                                                    );
+                                                    try {
+                                                      await SlipInboxService
+                                                          .saveDrafts(
+                                                              updatedDrafts);
+                                                      if (sheetContext
+                                                          .mounted) {
+                                                        setState(() =>
+                                                            _slipDrafts =
+                                                                updatedDrafts);
+                                                        setSheetState(() {});
+                                                      }
+                                                    } catch (error) {
+                                                      debugPrint(
+                                                        'Could not update slip selection: $error',
+                                                      );
+                                                      if (sheetContext
+                                                          .mounted) {
+                                                        ScaffoldMessenger.of(
+                                                                sheetContext)
+                                                            .showSnackBar(
+                                                          SnackBar(
+                                                            content: Text(
+                                                              T.get(
+                                                                  'saveError'),
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                    }
+                                                  },
+                                          ),
+                                          GestureDetector(
+                                            onTap: () => _showSlipImagePreview(
+                                              sheetContext,
+                                              draft.imagePath,
+                                            ),
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              child: Image.file(
+                                                File(draft.imagePath),
+                                                width: 34,
+                                                height: 42,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) =>
+                                                    const Icon(
+                                                  Icons.receipt_long_outlined,
+                                                  size: 32,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    title: Text(
+                                      draft.title.trim().isEmpty
+                                          ? T.get('slipTransactionTitle')
+                                          : draft.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      '${draft.amount == null ? T.get('slipInboxMissingAmount') : NumberFormat('#,##0.00').format(draft.amount)}  •  ${DateFormat('dd/MM/yyyy').format(draft.date)}',
+                                    ),
+                                    trailing: Wrap(
+                                      spacing: 0,
+                                      children: [
+                                        IconButton(
+                                          tooltip: T.get('edit'),
+                                          onPressed: isProcessing
+                                              ? null
+                                              : () => editDraft(draft),
+                                          icon: const Icon(Icons.edit_outlined),
+                                        ),
+                                        IconButton(
+                                          tooltip: T.get('delete'),
+                                          onPressed: isProcessing
+                                              ? null
+                                              : () => deleteDraft(draft),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: isProcessing || selectedCount == 0
+                                ? null
+                                : addSelectedDrafts,
+                            icon: const Icon(Icons.playlist_add_check_rounded),
+                            label: Text(
+                              '${T.get('addSelectedSlips')} ($selectedCount)',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } finally {
+      _isSlipInboxOpen = false;
+      if (_slipScanDeferred && mounted && !_isScanningNewSlips) {
+        _slipScanDeferred = false;
+        unawaited(_scanForNewSlips());
+      }
+    }
   }
 
   void _selectPaymentAccount(int index, {int slideDirection = 1}) {
@@ -1632,6 +2456,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _showEditDialog(TransactionModel tx) {
     final titleController = TextEditingController(text: tx.title);
     final amountController = TextEditingController(text: tx.amount.toString());
+    DateTime transactionDate = tx.date;
     String selectedCategory =
         (_categoryIcons.containsKey(tx.category) || tx.category == 'transfer')
             ? tx.category
@@ -1661,6 +2486,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           InputDecoration(labelText: T.get('amountLabel')),
                       keyboardType: TextInputType.number),
                   const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(T.get('transactionDateTime')),
+                  ),
+                  const SizedBox(height: 4),
+                  _buildDateTimeControls(
+                    pickerContext: context,
+                    value: transactionDate,
+                    onChanged: (value) =>
+                        setStateDialog(() => transactionDate = value),
+                  ),
+                  const SizedBox(height: 16),
                   _buildCategoryField(
                     selected: selectedCategory,
                     setModalState: setStateDialog,
@@ -1682,16 +2519,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onPressed: () => Navigator.pop(ctx),
                   child: Text(T.get('cancel'))),
               ElevatedButton(
-                onPressed: () {
-                  _transactionsCollection.doc(tx.id).update({
-                    'title': titleController.text,
-                    'amount':
-                        double.tryParse(amountController.text) ?? tx.amount,
-                    'category': selectedCategory,
-                    'paymentMethod': selectedPaymentMethod,
-                    'updatedAt': DateTime.now().toIso8601String(),
-                  });
-                  Navigator.pop(ctx);
+                onPressed: () async {
+                  try {
+                    await _transactionsCollection.doc(tx.id).update({
+                      'title': titleController.text,
+                      'amount':
+                          double.tryParse(amountController.text) ?? tx.amount,
+                      'date': transactionDate.toIso8601String(),
+                      'category': selectedCategory,
+                      'paymentMethod': selectedPaymentMethod,
+                      'updatedAt': DateTime.now().toIso8601String(),
+                    });
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  } catch (_) {
+                    if (!ctx.mounted) return;
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text(T.get('saveError'))),
+                    );
+                  }
                 },
                 child: Text(T.get('save')),
               ),
@@ -1699,6 +2544,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildDateTimeControls({
+    required BuildContext pickerContext,
+    required DateTime value,
+    required ValueChanged<DateTime> onChanged,
+  }) {
+    final locale = languageNotifier.value == 'th' ? 'th' : 'en';
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        OutlinedButton.icon(
+          icon: const Icon(Icons.calendar_today_outlined),
+          label: Text(DateFormat('dd/MM/yyyy', locale).format(value)),
+          onPressed: () async {
+            final firstDate = DateTime(1900);
+            final lastDate = DateTime.now().add(const Duration(days: 365));
+            final initialDate = value.isBefore(firstDate)
+                ? firstDate
+                : value.isAfter(lastDate)
+                    ? lastDate
+                    : value;
+            final date = await showDatePicker(
+              context: pickerContext,
+              initialDate: initialDate,
+              firstDate: firstDate,
+              lastDate: lastDate,
+            );
+            if (date != null) {
+              onChanged(DateTime(
+                date.year,
+                date.month,
+                date.day,
+                value.hour,
+                value.minute,
+                value.second,
+                value.millisecond,
+                value.microsecond,
+              ));
+            }
+          },
+        ),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.access_time),
+          label: Text(DateFormat('HH:mm', locale).format(value)),
+          onPressed: () async {
+            final time = await showTimePicker(
+              context: pickerContext,
+              initialTime: TimeOfDay.fromDateTime(value),
+            );
+            if (time != null) {
+              onChanged(DateTime(
+                value.year,
+                value.month,
+                value.day,
+                time.hour,
+                time.minute,
+                value.second,
+                value.millisecond,
+                value.microsecond,
+              ));
+            }
+          },
+        ),
+      ],
     );
   }
 
@@ -1779,8 +2691,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (dialogContext) => AlertDialog(
         icon: const Icon(Icons.delete_sweep_outlined),
         title: Text(T.get('deleteConfirmTitle')),
-        content: Text(
-            '${T.get('deleteConfirmContent')}${ids.length} ${T.get('selectedTransactions')}'),
+        content: Text(T
+            .get('deleteSelectedConfirmContent')
+            .replaceAll('{count}', ids.length.toString())),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -1788,7 +2701,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           FilledButton.icon(
               onPressed: () => Navigator.pop(dialogContext, true),
               icon: const Icon(Icons.delete_outline),
-              label: Text(T.get('delete'))),
+              label: Text(T.get('moveToTrash'))),
         ],
       ),
     );
@@ -1805,7 +2718,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!mounted) return;
       setState(() => _selectedTransactionIds.clear());
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${ids.length} ${T.get('deleted')}')));
+        SnackBar(
+          content: Text(
+            T
+                .get('deleteSelectedSuccess')
+                .replaceAll('{count}', ids.length.toString()),
+          ),
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -1817,8 +2737,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_selectedTransactionIds.isEmpty) return;
     var selectedCategory = _categoryIcons.keys.first;
     var selectedPayment = _paymentIcons.keys.first;
+    final selectedTransactions = _selectedTransactionIds
+        .map((id) => _cachedTransactionsById[id])
+        .whereType<TransactionModel>()
+        .toList();
+    var selectedDateTime = selectedTransactions.isEmpty
+        ? DateTime.now()
+        : selectedTransactions.first.date;
     var changeCategory = false;
     var changePayment = false;
+    var changeDateTime = false;
 
     showModalBottomSheet<void>(
       context: context,
@@ -1875,6 +2803,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ])),
                 ]),
                 const SizedBox(height: 20),
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          secondary: Icon(
+                            Icons.event_available_outlined,
+                            color: Theme.of(sheetContext).colorScheme.primary,
+                          ),
+                          title: Text(
+                            T.get('changeDateTime'),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          value: changeDateTime,
+                          onChanged: (value) => setSheetState(
+                            () => changeDateTime = value ?? false,
+                          ),
+                        ),
+                        if (changeDateTime)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              left: 4,
+                              right: 4,
+                              bottom: 8,
+                            ),
+                            child: _buildDateTimeControls(
+                              pickerContext: sheetContext,
+                              value: selectedDateTime,
+                              onChanged: (value) => setSheetState(
+                                () => selectedDateTime = value,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Card(
                     margin: EdgeInsets.zero,
                     child: Padding(
@@ -1948,26 +2919,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                       child: FilledButton.icon(
-                    onPressed: !changeCategory && !changePayment
+                    onPressed: !changeCategory &&
+                            !changePayment &&
+                            !changeDateTime
                         ? null
                         : () async {
-                            final batch = FirebaseFirestore.instance.batch();
                             final updatedAt = DateTime.now().toIso8601String();
-                            for (final id in _selectedTransactionIds.toList()) {
-                              final updates = <String, dynamic>{
-                                'updatedAt': updatedAt,
-                              };
-                              if (changeCategory) {
-                                updates['category'] = selectedCategory;
-                              }
-                              if (changePayment) {
-                                updates['paymentMethod'] = selectedPayment;
-                              }
-                              batch.update(
-                                  _transactionsCollection.doc(id), updates);
-                            }
+                            final ids = _selectedTransactionIds.toList();
                             try {
-                              await batch.commit();
+                              for (var start = 0;
+                                  start < ids.length;
+                                  start += 450) {
+                                final chunk = ids.skip(start).take(450);
+                                final chunkBatch =
+                                    FirebaseFirestore.instance.batch();
+                                for (final id in chunk) {
+                                  final updates = <String, dynamic>{
+                                    'updatedAt': updatedAt,
+                                  };
+                                  if (changeDateTime) {
+                                    updates['date'] =
+                                        selectedDateTime.toIso8601String();
+                                  }
+                                  if (changeCategory) {
+                                    updates['category'] = selectedCategory;
+                                  }
+                                  if (changePayment) {
+                                    updates['paymentMethod'] = selectedPayment;
+                                  }
+                                  chunkBatch.update(
+                                    _transactionsCollection.doc(id),
+                                    updates,
+                                  );
+                                }
+                                await chunkBatch.commit();
+                              }
                               if (mounted) {
                                 setState(() => _selectedTransactionIds.clear());
                               }
@@ -1994,12 +2980,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _showAddTransactionSheet(BuildContext context) {
+  void _showAddTransactionSheet(
+    BuildContext context, {
+    bool scanSlipOnOpen = false,
+  }) {
+    if (scanSlipOnOpen) {
+      unawaited(_showSlipInboxSheet());
+      return;
+    }
+
     final titleController = TextEditingController();
     final amountController = TextEditingController();
     bool isExpense = true;
+    bool isReadingSlip = false;
+    DateTime transactionDate = DateTime.now();
+    Uint8List? slipImageBytes;
+    String? transactionNumber;
+    String? slipMessage;
     String selectedCategory = _categoryIcons.keys.first;
     String selectedPaymentMethod = _paymentIcons.keys.first;
+    var startedSlipScan = false;
 
     showModalBottomSheet(
       context: context,
@@ -2009,6 +3009,99 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
+            Future<void> readSlip() async {
+              if (kIsWeb ||
+                  (defaultTargetPlatform != TargetPlatform.android &&
+                      defaultTargetPlatform != TargetPlatform.iOS)) {
+                setModalState(() => slipMessage = T.get('slipOcrUnsupported'));
+                return;
+              }
+
+              final source = await showModalBottomSheet<ImageSource>(
+                context: context,
+                showDragHandle: true,
+                builder: (sourceContext) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.photo_camera_outlined),
+                        title: Text(T.get('takeSlipPhoto')),
+                        onTap: () =>
+                            Navigator.pop(sourceContext, ImageSource.camera),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.photo_library_outlined),
+                        title: Text(T.get('chooseSlipImage')),
+                        onTap: () =>
+                            Navigator.pop(sourceContext, ImageSource.gallery),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+              if (source == null || !ctx.mounted) return;
+
+              setModalState(() {
+                isReadingSlip = true;
+                slipMessage = T.get('slipOcrProcessing');
+              });
+              try {
+                final image = await ImagePicker().pickImage(
+                  source: source,
+                  imageQuality: 100,
+                );
+                if (image == null || !ctx.mounted) {
+                  if (ctx.mounted) {
+                    setModalState(() {
+                      isReadingSlip = false;
+                      slipMessage = null;
+                    });
+                  }
+                  return;
+                }
+
+                final imageBytes = await image.readAsBytes();
+                final textRecognizer = TextRecognizer();
+                late final String recognizedText;
+                try {
+                  final result = await textRecognizer.processImage(
+                    InputImage.fromFilePath(image.path),
+                  );
+                  recognizedText = result.text;
+                } finally {
+                  await textRecognizer.close();
+                }
+                final result = SlipOcrParser.parse(recognizedText);
+                if (!ctx.mounted) return;
+                setModalState(() {
+                  slipImageBytes = imageBytes;
+                  if (result.amount != null) {
+                    amountController.text = result.amount!.toStringAsFixed(2);
+                  }
+                  if (result.date != null) transactionDate = result.date!;
+                  transactionNumber = result.transactionNumber;
+                  slipMessage = result.amount == null
+                      ? T.get('slipOcrNoAmount')
+                      : T.get('slipOcrReview');
+                  isReadingSlip = false;
+                });
+              } catch (error) {
+                if (!ctx.mounted) return;
+                setModalState(() {
+                  isReadingSlip = false;
+                  slipMessage = '${T.get('slipOcrFailed')}: $error';
+                });
+              }
+            }
+
+            if (scanSlipOnOpen && !startedSlipScan) {
+              startedSlipScan = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (ctx.mounted) readSlip();
+              });
+            }
+
             return Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(ctx).viewInsets.bottom +
@@ -2026,19 +3119,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         style: const TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 16),
+                    if (scanSlipOnOpen) ...[
+                      IconButton(
+                        tooltip: T.get('scanSlip'),
+                        onPressed: isReadingSlip ? null : readSlip,
+                        icon: isReadingSlip
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.document_scanner_outlined),
+                      ),
+                      if (slipMessage != null) ...[
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            slipMessage!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: slipMessage ==
+                                              T.get('slipOcrNoAmount') ||
+                                          slipMessage!.startsWith(
+                                              T.get('slipOcrFailed'))
+                                      ? Theme.of(context).colorScheme.error
+                                      : Theme.of(context).colorScheme.primary,
+                                ),
+                          ),
+                        ),
+                      ],
+                      if (slipImageBytes != null) ...[
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            slipImageBytes!,
+                            height: 120,
+                            width: double.infinity,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                    ],
                     TextField(
-                        controller: titleController,
-                        decoration: InputDecoration(
-                            labelText: T.get('titleLabel'),
-                            border: const OutlineInputBorder())),
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        labelText: T.get('titleLabel'),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     TextField(
-                        controller: amountController,
-                        decoration: InputDecoration(
-                            labelText: T.get('amountLabel'),
-                            border: const OutlineInputBorder()),
-                        keyboardType: TextInputType.number),
+                      controller: amountController,
+                      decoration: InputDecoration(
+                        labelText: T.get('amountLabel'),
+                        border: const OutlineInputBorder(),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
                     const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(T.get('transactionDateTime')),
+                    ),
+                    _buildDateTimeControls(
+                      pickerContext: context,
+                      value: transactionDate,
+                      onChanged: (value) =>
+                          setModalState(() => transactionDate = value),
+                    ),
+                    const SizedBox(height: 8),
                     _buildCategoryField(
                       selected: selectedCategory,
                       outlined: true,
@@ -2081,21 +3238,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             backgroundColor:
                                 Theme.of(context).colorScheme.primary,
                             foregroundColor: Colors.white),
-                        onPressed: () {
-                          if (titleController.text.isEmpty ||
-                              amountController.text.isEmpty) {
+                        onPressed: () async {
+                          final title = titleController.text.trim().isEmpty
+                              ? ''
+                              : titleController.text.trim();
+                          if (title.isEmpty || amountController.text.isEmpty) {
                             return;
                           }
-                          _transactionsCollection.add({
-                            'title': titleController.text,
-                            'amount':
-                                double.tryParse(amountController.text) ?? 0.0,
-                            'date': DateTime.now().toIso8601String(),
-                            'isExpense': isExpense ? 1 : 0,
-                            'category': selectedCategory,
-                            'paymentMethod': selectedPaymentMethod,
-                          });
-                          Navigator.pop(ctx);
+                          final amount = double.tryParse(
+                            amountController.text.replaceAll(',', ''),
+                          );
+                          if (amount == null || amount <= 0) return;
+                          try {
+                            await _transactionsCollection.add({
+                              'title': title,
+                              'amount': amount,
+                              'date': transactionDate.toIso8601String(),
+                              'isExpense': isExpense ? 1 : 0,
+                              'category': selectedCategory,
+                              'paymentMethod': selectedPaymentMethod,
+                              if (transactionNumber != null)
+                                'transactionNo': transactionNumber,
+                            });
+                            if (ctx.mounted) Navigator.pop(ctx);
+                          } catch (_) {
+                            if (!ctx.mounted) return;
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text(T.get('saveError'))),
+                            );
+                          }
                         },
                         child: Text(T.get('save'),
                             style: const TextStyle(fontSize: 16)),
@@ -2156,6 +3327,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       DateFormat('yyyy-MM-dd').format(tx.date),
       tx.id,
       tx.invoiceNo,
+      tx.transactionNo,
       tx.customerName,
       tx.taxId,
       tx.branchCode,
@@ -2858,12 +4030,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(T.get('history'),
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text(
-                        isSelecting
-                            ? T.get('tapToSelectMore')
-                            : T.get('longPressToSelect'),
-                        style:
-                            const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                 ),
               ),
@@ -3259,9 +4425,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
-            floatingActionButton: FloatingActionButton(
-              onPressed: () => _showAddTransactionSheet(context),
-              child: const Icon(Icons.add),
+            floatingActionButton: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FloatingActionButton(
+                  heroTag: 'addFromSlipFab',
+                  tooltip: T.get('scanSlip'),
+                  onPressed: () => _showAddTransactionSheet(
+                    context,
+                    scanSlipOnOpen: true,
+                  ),
+                  child: const Icon(Icons.document_scanner_outlined),
+                ),
+                const SizedBox(height: 12),
+                FloatingActionButton(
+                  heroTag: 'addTransactionFab',
+                  onPressed: () => _showAddTransactionSheet(context),
+                  child: const Icon(Icons.add),
+                ),
+              ],
             ),
           ),
         );

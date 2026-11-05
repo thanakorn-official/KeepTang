@@ -24,6 +24,10 @@
 		<string>????</string>
 		<key>CFBundleVersion</key>
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Take a photo of a bank slip to create a transaction.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Access your photo library to find new bank slips and add them to transactions.</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
 		<key>UIApplicationSceneManifest</key>

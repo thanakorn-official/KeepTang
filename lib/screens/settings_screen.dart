@@ -134,6 +134,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onPressed: () async {
                   final snapshot = await _transactionsCollection.get();
                   final trashDocs = snapshot.docs.where(_isInTrash).toList();
+                  if (trashDocs.isEmpty || !context.mounted) return;
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogContext) => AlertDialog(
+                      icon: const Icon(Icons.delete_forever_outlined),
+                      title: Text(T.get('emptyTrash')),
+                      content: Text(
+                        T
+                            .get('emptyTrashConfirmContent')
+                            .replaceAll('{count}', trashDocs.length.toString()),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext, false),
+                          child: Text(T.get('cancel')),
+                        ),
+                        FilledButton.icon(
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          icon: const Icon(Icons.delete_forever_outlined),
+                          label: Text(T.get('emptyTrash')),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
                   for (var i = 0; i < trashDocs.length; i += 400) {
                     final batch = FirebaseFirestore.instance.batch();
                     for (final doc in trashDocs.skip(i).take(400)) {
@@ -263,7 +288,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 padding: const EdgeInsets.all(8),
                                 tooltip: T.get('deletePermanently'),
                                 icon: const Icon(Icons.delete_forever_outlined),
-                                onPressed: () => doc.reference.delete(),
+                                onPressed: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (dialogContext) => AlertDialog(
+                                      icon: const Icon(
+                                        Icons.delete_forever_outlined,
+                                      ),
+                                      title: Text(T.get('deleteConfirmTitle')),
+                                      content: Text(
+                                        T
+                                            .get('deleteNamedConfirmContent')
+                                            .replaceAll(
+                                              '{name}',
+                                              (doc.data() as Map<String,
+                                                      dynamic>)['title']
+                                                  .toString(),
+                                            ),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(
+                                              dialogContext, false),
+                                          child: Text(T.get('cancel')),
+                                        ),
+                                        FilledButton.icon(
+                                          onPressed: () => Navigator.pop(
+                                              dialogContext, true),
+                                          icon: const Icon(
+                                            Icons.delete_forever_outlined,
+                                          ),
+                                          label:
+                                              Text(T.get('deletePermanently')),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed == true) {
+                                    await doc.reference.delete();
+                                  }
+                                },
                               ),
                             ],
                           ),
@@ -805,7 +869,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(T.get('deleteConfirmTitle')),
-        content: Text('${T.get('deleteConfirmContent')}$category'),
+        content: Text(
+            T.get('deleteNamedConfirmContent').replaceAll('{name}', category)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -827,7 +892,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(T.get('deleteConfirmTitle')),
-        content: Text('${T.get('deleteConfirmContent')}$payment'),
+        content: Text(
+            T.get('deleteNamedConfirmContent').replaceAll('{name}', payment)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -851,7 +917,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (context) => StatefulBuilder(
           builder: (context, setModalState) {
             return Scaffold(
-              appBar: AppBar(title: Text(T.get('manageCategories'))),
+              appBar: AppBar(
+                title: Text(T.get('manageCategories')),
+                actions: [
+                  IconButton(
+                    tooltip: T.get('addCategory'),
+                    onPressed: () => _showCategoryDialog(setModalState),
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
+              ),
               body: ReorderableListView.builder(
                 buildDefaultDragHandles: false,
                 onReorderItem: (oldIndex, newIndex) async {
@@ -866,7 +941,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   left: 16,
                   right: 16,
                   top: 16,
-                  bottom: MediaQuery.of(context).padding.bottom + 80,
+                  bottom: MediaQuery.of(context).padding.bottom + 16,
                 ),
                 itemCount: _categories.length,
                 itemBuilder: (context, index) {
@@ -979,15 +1054,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 label: Text(T.get('delete'))),
                           ])),
                     ),
-              floatingActionButton: Padding(
-                padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).padding.bottom + 8),
-                child: FloatingActionButton.extended(
-                  onPressed: () => _showCategoryDialog(setModalState),
-                  icon: const Icon(Icons.add),
-                  label: Text(T.get('addCategory')),
-                ),
-              ),
             );
           },
         ),
@@ -1003,7 +1069,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (context) => StatefulBuilder(
           builder: (context, setModalState) {
             return Scaffold(
-              appBar: AppBar(title: Text(T.get('managePayments'))),
+              appBar: AppBar(
+                title: Text(T.get('managePayments')),
+                actions: [
+                  IconButton(
+                    tooltip: T.get('addPayment'),
+                    onPressed: () => _showPaymentDialog(setModalState),
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
+              ),
               body: ReorderableListView.builder(
                 buildDefaultDragHandles: false,
                 onReorderItem: (oldIndex, newIndex) async {
@@ -1018,7 +1093,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   left: 16,
                   right: 16,
                   top: 16,
-                  bottom: MediaQuery.of(context).padding.bottom + 80,
+                  bottom: MediaQuery.of(context).padding.bottom + 16,
                 ),
                 itemCount: _payments.length,
                 itemBuilder: (context, index) {
@@ -1131,15 +1206,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 label: Text(T.get('delete'))),
                           ])),
                     ),
-              floatingActionButton: Padding(
-                padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).padding.bottom + 8),
-                child: FloatingActionButton.extended(
-                  onPressed: () => _showPaymentDialog(setModalState),
-                  icon: const Icon(Icons.add),
-                  label: Text(T.get('addPayment')),
-                ),
-              ),
             );
           },
         ),
