@@ -36,6 +36,7 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
   final Set<String> _selectedCategories = {};
   bool _busy = false;
   bool _isRestoring = false;
+  int _setupStep = 0;
 
   @override
   void dispose() {
@@ -182,6 +183,80 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
     );
   }
 
+  void _continueSetup() {
+    if (_setupStep == 0 && _controller.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(T.get('usernameEmpty'))),
+      );
+      return;
+    }
+    if (_setupStep == 1) {
+      final payment = _firstPaymentController.text.trim();
+      if (payment.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(T.get('firstPaymentRequired'))),
+        );
+        return;
+      }
+      if (payment == _unspecified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(T.get('firstPaymentReserved'))),
+        );
+        return;
+      }
+    }
+    setState(() => _setupStep++);
+  }
+
+  Widget _buildSetupProgress(ColorScheme scheme) {
+    final labels = [
+      T.get('setupStepName'),
+      T.get('setupStepPayment'),
+      T.get('setupStepCategories'),
+    ];
+    final icons = [
+      Icons.person_outline,
+      Icons.payments_outlined,
+      Icons.category_outlined
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(top: 24, bottom: 12),
+      child: Row(
+        children: List.generate(labels.length, (index) {
+          final active = index == _setupStep;
+          final complete = index < _setupStep;
+          final color = active || complete ? scheme.primary : scheme.outline;
+          return Expanded(
+            child: Row(children: [
+              CircleAvatar(
+                radius: 15,
+                backgroundColor: color.withValues(alpha: .12),
+                child: Icon(complete ? Icons.check : icons[index],
+                    size: 16, color: color),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                  child: Text(labels[index],
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: color,
+                          fontWeight:
+                              active ? FontWeight.w700 : FontWeight.w500))),
+              if (index < labels.length - 1)
+                Container(
+                    width: 10,
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    color: scheme.outlineVariant),
+            ]),
+          );
+        }),
+      ),
+    );
+  }
+
   Widget _buildPreferences(ColorScheme scheme) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -293,23 +368,26 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                         color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                       ),
                     ),
-                    const SizedBox(height: 32),
-                    TextField(
-                      controller: _controller,
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _start(),
-                      maxLength: _isRestoring ? 50 : 30,
-                      decoration: InputDecoration(
-                        labelText: _isRestoring
-                            ? T.get('restoreGuestIdLabel')
-                            : T.get('usernameLabel'),
-                        prefixIcon: Icon(_isRestoring
-                            ? Icons.vpn_key
-                            : Icons.person_outline),
-                        counterText: '',
+                    if (!_isRestoring) _buildSetupProgress(scheme),
+                    const SizedBox(height: 24),
+                    if (_isRestoring || _setupStep == 0)
+                      TextField(
+                        controller: _controller,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) =>
+                            _isRestoring ? _start() : _continueSetup(),
+                        maxLength: _isRestoring ? 50 : 30,
+                        decoration: InputDecoration(
+                          labelText: _isRestoring
+                              ? T.get('restoreGuestIdLabel')
+                              : T.get('usernameLabel'),
+                          prefixIcon: Icon(_isRestoring
+                              ? Icons.vpn_key
+                              : Icons.person_outline),
+                          counterText: '',
+                        ),
                       ),
-                    ),
-                    if (!_isRestoring) ...[
+                    if (!_isRestoring && _setupStep == 1) ...[
                       const SizedBox(height: 20),
                       Card(
                         child: Padding(
@@ -344,6 +422,8 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                           ),
                         ),
                       ),
+                    ],
+                    if (!_isRestoring && _setupStep == 2) ...[
                       const SizedBox(height: 14),
                       Card(
                         child: Padding(
@@ -383,7 +463,13 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton(
-                        onPressed: _busy ? null : _start,
+                        onPressed: _busy
+                            ? null
+                            : _isRestoring
+                                ? _start
+                                : _setupStep < 2
+                                    ? _continueSetup
+                                    : _start,
                         style: ElevatedButton.styleFrom(
                           elevation: 0,
                           shape: RoundedRectangleBorder(
@@ -399,16 +485,26 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                             : Text(
                                 _isRestoring
                                     ? T.get('restoreButton')
-                                    : T.get('startButton'),
+                                    : _setupStep < 2
+                                        ? T.get('continue')
+                                        : T.get('startButton'),
                                 style: const TextStyle(
                                     fontSize: 15, fontWeight: FontWeight.w600)),
                       ),
                     ),
+                    if (!_isRestoring && _setupStep > 0)
+                      TextButton.icon(
+                        onPressed:
+                            _busy ? null : () => setState(() => _setupStep--),
+                        icon: const Icon(Icons.arrow_back),
+                        label: Text(T.get('back')),
+                      ),
                     const SizedBox(height: 16),
                     TextButton(
                       onPressed: () {
                         setState(() {
                           _isRestoring = !_isRestoring;
+                          _setupStep = 0;
                           _controller.clear();
                         });
                       },
