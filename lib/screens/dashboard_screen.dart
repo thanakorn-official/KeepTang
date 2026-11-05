@@ -2436,26 +2436,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!context.mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
-      late final Timer autoDismissTimer;
-      final snackBar = messenger.showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
-          content: Text(
-              '${T.get(hidden ? 'hiddenFromDashboard' : 'shownOnDashboard')}: ${tx.title}'),
-          action: SnackBarAction(
-            label: T.get('undo'),
-            onPressed: () {
-              autoDismissTimer.cancel();
-              _transactionsCollection
-                  .doc(tx.id)
-                  .update({'hiddenFromDashboard': !hidden});
-            },
-          ),
-        ),
-      );
-      autoDismissTimer = Timer(const Duration(seconds: 5), snackBar.close);
-      snackBar.closed.then((_) => autoDismissTimer.cancel());
+      messenger.showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        content: Text(
+            '${T.get(hidden ? 'hiddenFromDashboard' : 'shownOnDashboard')}: ${tx.title}'),
+      ));
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

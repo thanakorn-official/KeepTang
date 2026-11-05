@@ -19,6 +19,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _unspecified = '\u0e44\u0e21\u0e48\u0e23\u0e30\u0e1a\u0e38';
+  Future<void> _settingsSaveQueue = Future<void>.value();
   List<String> _categories = [
     'อาหาร',
     'เดินทาง',
@@ -492,24 +493,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _saveCategories() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('app_categories_list', jsonEncode(_categories));
-    await prefs.setString(
-        'app_category_icon_codes', jsonEncode(_categoryIconCodes));
-    await prefs.setString(
-        'app_category_color_values', jsonEncode(_categoryColorValues));
-    await GuestService.saveCustomSettings();
+  Future<void> _queueSettingsSave(Future<void> Function() save) {
+    final pendingSave = _settingsSaveQueue.then((_) => save());
+    _settingsSaveQueue = pendingSave.catchError((Object _) {});
+    return pendingSave;
   }
 
-  Future<void> _savePayments() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('app_payments_list', jsonEncode(_payments));
-    await prefs.setString(
-        'app_payment_icon_codes', jsonEncode(_paymentIconCodes));
-    await prefs.setString(
-        'app_payment_color_values', jsonEncode(_paymentColorValues));
-    await GuestService.saveCustomSettings();
+  Future<void> _saveCategories() {
+    final categories = jsonEncode(_categories.toList());
+    final icons = jsonEncode(Map<String, int>.from(_categoryIconCodes));
+    final colors = jsonEncode(Map<String, int>.from(_categoryColorValues));
+    return _queueSettingsSave(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('app_categories_list', categories);
+      await prefs.setString('app_category_icon_codes', icons);
+      await prefs.setString('app_category_color_values', colors);
+      await GuestService.saveCustomSettings();
+    });
+  }
+
+  Future<void> _savePayments() {
+    final payments = jsonEncode(_payments.toList());
+    final icons = jsonEncode(Map<String, int>.from(_paymentIconCodes));
+    final colors = jsonEncode(Map<String, int>.from(_paymentColorValues));
+    return _queueSettingsSave(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('app_payments_list', payments);
+      await prefs.setString('app_payment_icon_codes', icons);
+      await prefs.setString('app_payment_color_values', colors);
+      await GuestService.saveCustomSettings();
+    });
   }
 
   void _showCategoryDialog(StateSetter setModalState, {String? oldCategory}) {
