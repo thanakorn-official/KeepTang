@@ -96,11 +96,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       .doc(GuestService.guestId)
       .collection('transactions');
 
+  bool _isInTrash(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return data['deletedAt'] is Timestamp;
+  }
+
   Future<void> _purgeExpiredTrash() async {
     final cutoff = DateTime.now().subtract(const Duration(days: 30));
-    final snap = await _transactionsCollection
-        .where('deletedAt', isNotEqualTo: null)
-        .get();
+    final snap = await _transactionsCollection.get();
     final expired = snap.docs.where((d) {
       final value = d.data() as Map<String, dynamic>;
       final deletedAt = value['deletedAt'];
@@ -126,12 +129,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         tooltip: 'ล้างถังขยะ',
                         icon: const Icon(Icons.delete_sweep_outlined),
                         onPressed: () async {
-                          final snap = await _transactionsCollection
-                              .where('deletedAt', isNotEqualTo: null)
-                              .get();
-                          for (var i = 0; i < snap.docs.length; i += 400) {
+                          final snap = await _transactionsCollection.get();
+                          final trashDocs =
+                              snap.docs.where(_isInTrash).toList();
+                          for (var i = 0; i < trashDocs.length; i += 400) {
                             final batch = FirebaseFirestore.instance.batch();
-                            for (final doc in snap.docs.skip(i).take(400)) {
+                            for (final doc in trashDocs.skip(i).take(400)) {
                               batch.delete(doc.reference);
                             }
                             await batch.commit();
@@ -139,15 +142,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         })
                   ]),
                   body: StreamBuilder<QuerySnapshot>(
-                      stream: _transactionsCollection
-                          .where('deletedAt', isNotEqualTo: null)
-                          .snapshots(),
+                      stream: _transactionsCollection.snapshots(),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
                           return const Center(
                               child: CircularProgressIndicator());
                         }
-                        final docs = snapshot.data!.docs.toList()
+                        final docs = snapshot.data!.docs
+                            .where(_isInTrash)
+                            .toList()
                           ..sort((a, b) {
                             final aDeleted =
                                 (a.data() as Map<String, dynamic>)['deletedAt'];
