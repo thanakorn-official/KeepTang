@@ -45,34 +45,34 @@ flutter:
 flutter_launcher_icons:
   android: "keeptang_icon"
   ios: true
-  image_path: "assets/splash_bill_base.png"
+  image_path: "assets/logo.png"
   adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/splash_bill_base.png"
-  adaptive_icon_monochrome: "assets/splash_bill_base.png"
+  adaptive_icon_foreground: "assets/logo.png"
+  adaptive_icon_monochrome: "assets/logo.png"
   remove_alpha_ios: true
   min_sdk_android: 21
   web:
     generate: true
-    image_path: "assets/splash_bill_base.png"
+    image_path: "assets/logo.png"
     background_color: "#ffffff"
     theme_color: "#007AFF"
   windows:
     generate: true
-    image_path: "assets/splash_bill_base.png"
+    image_path: "assets/logo.png"
     icon_size: 256
   macos:
     generate: true
-    image_path: "assets/splash_bill_base.png"
+    image_path: "assets/logo.png"
 
 flutter_native_splash:
   color: "#ffffff"
-  image: "assets/splash_bill_base.png"
+  image: "assets/logo.png"
   color_dark: "#121212"
-  image_dark: "assets/splash_bill_base_dark.png"
+  image_dark: "assets/logo_dark.png"
   android: true
   ios: true
   android_12:
     color: "#ffffff"
-    image: "assets/splash_bill_base.png"
+    image: "assets/logo.png"
     color_dark: "#121212"
-    image_dark: "assets/splash_bill_base_dark.png"
+    image_dark: "assets/logo_dark.png"

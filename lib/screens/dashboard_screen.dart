@@ -20,6 +20,9 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  static const _sortOrderPreferenceKey = 'dashboard_sort_order';
+  static const _sortOrderOptions = ['newest', 'oldest', 'highest', 'lowest'];
+
   final ScrollController _dashboardScrollController = ScrollController();
   late final Stream<QuerySnapshot> _transactionsStream;
   QuerySnapshot? _cachedSnapshot;
@@ -141,6 +144,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _groupType = 'monthly';
   String _sortOrder = 'newest';
+  bool _sortOrderWasChanged = false;
 
   Set<String> _selectedTypes = {'income', 'expense', 'transfer'};
   Set<String> _selectedCategories = {};
@@ -348,6 +352,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadCustomSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
+    final savedSortOrder = prefs.getString(_sortOrderPreferenceKey);
+    if (!_sortOrderWasChanged && _sortOrderOptions.contains(savedSortOrder)) {
+      setState(() {
+        _sortOrder = savedSortOrder!;
+      });
+    }
+
     final customCats = prefs.getString('app_categories_list');
     if (customCats != null) {
       final List<dynamic> decoded = jsonDecode(customCats);
@@ -426,6 +437,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _categoryColors.putIfAbsent(unspecified, () => Colors.blueGrey);
     _paymentIcons.putIfAbsent(unspecified, () => Icons.help_outline);
     _paymentColors.putIfAbsent(unspecified, () => Colors.blueGrey);
+  }
+
+  Future<void> _updateSortOrder(String? value) async {
+    if (value == null || !_sortOrderOptions.contains(value)) return;
+
+    setState(() {
+      _sortOrder = value;
+      _sortOrderWasChanged = true;
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_sortOrderPreferenceKey, value);
   }
 
   Color _colorOf(String category) {
@@ -1417,9 +1440,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           _buildDropdown(
             _sortOrder,
-            ['newest', 'oldest', 'highest', 'lowest'],
+            _sortOrderOptions,
             Icons.sort,
-            (value) => setState(() => _sortOrder = value!),
+            _updateSortOrder,
             isActive: _sortOrder != 'newest',
           ),
           _buildMultiSelectButton(
