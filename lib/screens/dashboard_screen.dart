@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import 'dart:convert';
 
 import '../models/transaction_model.dart';
@@ -2389,29 +2390,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
 
-    messenger
-        .showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 5),
-            margin: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
-            backgroundColor: Colors.black.withValues(alpha: 0.85),
-            content: Text(
-              '${T.get('deleted')} ${tx.title}',
-              style: const TextStyle(color: Colors.white),
-            ),
-            action: SnackBarAction(
-              label: T.get('undo'),
-              textColor: Colors.amberAccent,
-              onPressed: () {
-                isUndone = true;
-                setState(() => _pendingDeleteIds.remove(tx.id));
-              },
-            ),
-          ),
-        )
-        .closed
-        .then((reason) {
+    late final Timer autoDismissTimer;
+    final snackBar = messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+        margin: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
+        backgroundColor: Colors.black.withValues(alpha: 0.85),
+        content: Text(
+          '${T.get('deleted')} ${tx.title}',
+          style: const TextStyle(color: Colors.white),
+        ),
+        action: SnackBarAction(
+          label: T.get('undo'),
+          textColor: Colors.amberAccent,
+          onPressed: () {
+            isUndone = true;
+            autoDismissTimer.cancel();
+            setState(() => _pendingDeleteIds.remove(tx.id));
+          },
+        ),
+      ),
+    );
+    autoDismissTimer = Timer(const Duration(seconds: 5), () {
+      if (!isUndone) snackBar.close();
+    });
+    snackBar.closed.then((reason) {
+      autoDismissTimer.cancel();
       if (!isUndone && reason != SnackBarClosedReason.action) {
         _transactionsCollection
             .doc(tx.id)
@@ -2431,19 +2436,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!context.mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
+      late final Timer autoDismissTimer;
+      final snackBar = messenger.showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
           content: Text(
               '${T.get(hidden ? 'hiddenFromDashboard' : 'shownOnDashboard')}: ${tx.title}'),
           action: SnackBarAction(
             label: T.get('undo'),
-            onPressed: () => _transactionsCollection
-                .doc(tx.id)
-                .update({'hiddenFromDashboard': !hidden}),
+            onPressed: () {
+              autoDismissTimer.cancel();
+              _transactionsCollection
+                  .doc(tx.id)
+                  .update({'hiddenFromDashboard': !hidden});
+            },
           ),
         ),
       );
+      autoDismissTimer = Timer(const Duration(seconds: 5), snackBar.close);
+      snackBar.closed.then((_) => autoDismissTimer.cancel());
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
