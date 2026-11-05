@@ -1657,6 +1657,100 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  Widget _buildSelectionBar(String selectedNetLabel) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      elevation: 4,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: colors.primaryContainer,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(children: [
+          CircleAvatar(
+            radius: 19,
+            backgroundColor: colors.primary.withValues(alpha: .12),
+            child:
+                Icon(Icons.checklist_rounded, color: colors.primary, size: 21),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+              child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                  '${_selectedTransactionIds.length} ${T.get('selectedTransactions')}',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+              Text('${T.get('selectedNet')}: $selectedNetLabel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall),
+            ],
+          )),
+          IconButton(
+              tooltip: T.get('editSelected'),
+              onPressed: _showBulkEditSheet,
+              icon: const Icon(Icons.edit_note_rounded)),
+          IconButton(
+              tooltip: T.get('delete'),
+              onPressed: _deleteSelectedTransactions,
+              color: colors.error,
+              icon: const Icon(Icons.delete_sweep_outlined)),
+          IconButton(
+              tooltip: T.get('cancel'),
+              onPressed: _clearTransactionSelection,
+              icon: const Icon(Icons.close_rounded)),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _deleteSelectedTransactions() async {
+    final ids = _selectedTransactionIds.toList();
+    if (ids.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.delete_sweep_outlined),
+        title: Text(T.get('deleteConfirmTitle')),
+        content: Text(
+            '${T.get('deleteConfirmContent')}${ids.length} ${T.get('selectedTransactions')}'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(T.get('cancel'))),
+          FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.delete_outline),
+              label: Text(T.get('delete'))),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      for (var i = 0; i < ids.length; i += 400) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final id in ids.skip(i).take(400)) {
+          batch.update(_transactionsCollection.doc(id),
+              {'deletedAt': FieldValue.serverTimestamp()});
+        }
+        await batch.commit();
+      }
+      if (!mounted) return;
+      setState(() => _selectedTransactionIds.clear());
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${ids.length} ${T.get('deleted')}')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(T.get('saveError'))));
+    }
+  }
+
   void _showBulkEditSheet() {
     if (_selectedTransactionIds.isEmpty) return;
     var selectedCategory = _categoryIcons.keys.first;
@@ -1687,99 +1781,149 @@ class _DashboardScreenState extends State<DashboardScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${T.get('editSelected')} (${_selectedTransactionIds.length})',
-                  style: Theme.of(sheetContext).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 12),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(T.get('changeCategory')),
-                  value: changeCategory,
-                  onChanged: (value) =>
-                      setSheetState(() => changeCategory = value ?? false),
-                ),
-                if (changeCategory)
-                  _buildCategoryField(
-                    selected: selectedCategory,
-                    setModalState: setSheetState,
-                    onChanged: (value) => setSheetState(
-                        () => selectedCategory = value ?? selectedCategory),
-                    outlined: true,
-                  ),
-                const SizedBox(height: 10),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(T.get('changePayment')),
-                  value: changePayment,
-                  onChanged: (value) =>
-                      setSheetState(() => changePayment = value ?? false),
-                ),
-                if (changePayment)
-                  _buildPaymentField(
-                    selected: selectedPayment,
-                    setModalState: setSheetState,
-                    onChanged: (value) => setSheetState(
-                        () => selectedPayment = value ?? selectedPayment),
-                    outlined: true,
-                  ),
+                Center(
+                    child: Container(
+                        width: 38,
+                        height: 4,
+                        decoration: BoxDecoration(
+                            color: Theme.of(sheetContext)
+                                .colorScheme
+                                .outlineVariant,
+                            borderRadius: BorderRadius.circular(4)))),
+                const SizedBox(height: 18),
+                Row(children: [
+                  CircleAvatar(
+                      backgroundColor:
+                          Theme.of(sheetContext).colorScheme.primaryContainer,
+                      child: Icon(Icons.edit_note_rounded,
+                          color: Theme.of(sheetContext).colorScheme.primary)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Text(T.get('editSelected'),
+                            style: Theme.of(sheetContext)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w800)),
+                        Text(
+                            '${_selectedTransactionIds.length} ${T.get('selectedTransactions')}',
+                            style: Theme.of(sheetContext).textTheme.bodySmall),
+                      ])),
+                ]),
                 const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(sheetContext),
-                        child: Text(T.get('cancel')),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: !changeCategory && !changePayment
-                            ? null
-                            : () async {
-                                final batch =
-                                    FirebaseFirestore.instance.batch();
-                                final updatedAt =
-                                    DateTime.now().toIso8601String();
-                                for (final id
-                                    in _selectedTransactionIds.toList()) {
-                                  final updates = <String, dynamic>{
-                                    'updatedAt': updatedAt,
-                                  };
-                                  if (changeCategory) {
-                                    updates['category'] = selectedCategory;
-                                  }
-                                  if (changePayment) {
-                                    updates['paymentMethod'] = selectedPayment;
-                                  }
-                                  batch.update(
-                                      _transactionsCollection.doc(id), updates);
-                                }
-                                try {
-                                  await batch.commit();
-                                  if (mounted) {
-                                    setState(
-                                        () => _selectedTransactionIds.clear());
-                                  }
-                                  if (sheetContext.mounted) {
-                                    Navigator.pop(sheetContext);
-                                  }
-                                } catch (_) {
-                                  if (sheetContext.mounted) {
-                                    ScaffoldMessenger.of(sheetContext)
-                                        .showSnackBar(
-                                      SnackBar(
-                                          content: Text(T.get('saveError'))),
-                                    );
-                                  }
-                                }
-                              },
-                        child: Text(T.get('save')),
-                      ),
-                    ),
-                  ],
-                ),
+                Card(
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(children: [
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            secondary: Icon(Icons.category_outlined,
+                                color:
+                                    Theme.of(sheetContext).colorScheme.primary),
+                            title: Text(T.get('changeCategory'),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
+                            value: changeCategory,
+                            onChanged: (value) => setSheetState(
+                                () => changeCategory = value ?? false),
+                          ),
+                          if (changeCategory)
+                            Padding(
+                                padding: const EdgeInsets.only(
+                                    left: 4, right: 4, bottom: 8),
+                                child: _buildCategoryField(
+                                  selected: selectedCategory,
+                                  setModalState: setSheetState,
+                                  onChanged: (value) => setSheetState(() =>
+                                      selectedCategory =
+                                          value ?? selectedCategory),
+                                  outlined: true,
+                                )),
+                        ]))),
+                const SizedBox(height: 12),
+                Card(
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(children: [
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            secondary: Icon(
+                                Icons.account_balance_wallet_outlined,
+                                color: Theme.of(sheetContext)
+                                    .colorScheme
+                                    .tertiary),
+                            title: Text(T.get('changePayment'),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
+                            value: changePayment,
+                            onChanged: (value) => setSheetState(
+                                () => changePayment = value ?? false),
+                          ),
+                          if (changePayment)
+                            Padding(
+                                padding: const EdgeInsets.only(
+                                    left: 4, right: 4, bottom: 8),
+                                child: _buildPaymentField(
+                                  selected: selectedPayment,
+                                  setModalState: setSheetState,
+                                  onChanged: (value) => setSheetState(() =>
+                                      selectedPayment =
+                                          value ?? selectedPayment),
+                                  outlined: true,
+                                )),
+                        ]))),
+                const SizedBox(height: 22),
+                Row(children: [
+                  Expanded(
+                      child: OutlinedButton.icon(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          icon: const Icon(Icons.close),
+                          label: Text(T.get('cancel')))),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: FilledButton.icon(
+                    onPressed: !changeCategory && !changePayment
+                        ? null
+                        : () async {
+                            final batch = FirebaseFirestore.instance.batch();
+                            final updatedAt = DateTime.now().toIso8601String();
+                            for (final id in _selectedTransactionIds.toList()) {
+                              final updates = <String, dynamic>{
+                                'updatedAt': updatedAt,
+                              };
+                              if (changeCategory) {
+                                updates['category'] = selectedCategory;
+                              }
+                              if (changePayment) {
+                                updates['paymentMethod'] = selectedPayment;
+                              }
+                              batch.update(
+                                  _transactionsCollection.doc(id), updates);
+                            }
+                            try {
+                              await batch.commit();
+                              if (mounted) {
+                                setState(() => _selectedTransactionIds.clear());
+                              }
+                              if (sheetContext.mounted) {
+                                Navigator.pop(sheetContext);
+                              }
+                            } catch (_) {
+                              if (sheetContext.mounted) {
+                                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                  SnackBar(content: Text(T.get('saveError'))),
+                                );
+                              }
+                            }
+                          },
+                    icon: const Icon(Icons.check_rounded),
+                    label: Text(T.get('save')),
+                  )),
+                ]),
               ],
             ),
           ),
@@ -2604,6 +2748,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return CustomScrollView(
       controller: _dashboardScrollController,
       slivers: [
+        if (isSelecting)
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _PinnedSelectionHeader(
+              height: 76,
+              child: _buildSelectionBar(selectedNetLabel),
+            ),
+          ),
         SliverToBoxAdapter(
           child: Column(
             children: [
@@ -2617,48 +2769,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 balance: realBalance,
                 currentBalance: isSelecting ? selectedNet : currentBalance,
               ),
-              if (isSelecting)
-                Container(
-                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primaryContainer
-                        .withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                                '${_selectedTransactionIds.length} ${T.get('selectedTransactions')}'),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${T.get('selectedNet')}: $selectedNetLabel',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: T.get('cancel'),
-                        onPressed: _clearTransactionSelection,
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: _showBulkEditSheet,
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        label: Text(T.get('editSelected')),
-                      ),
-                    ],
-                  ),
-                ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
@@ -2969,4 +3079,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
       },
     );
   }
+}
+
+class _PinnedSelectionHeader extends SliverPersistentHeaderDelegate {
+  const _PinnedSelectionHeader({required this.height, required this.child});
+
+  final double height;
+  final Widget child;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+          BuildContext context, double shrinkOffset, bool overlapsContent) =>
+      child;
+
+  @override
+  bool shouldRebuild(covariant _PinnedSelectionHeader oldDelegate) =>
+      oldDelegate.child != child || oldDelegate.height != height;
 }
