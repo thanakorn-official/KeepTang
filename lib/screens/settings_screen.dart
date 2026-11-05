@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 import '../main.dart';
 import '../services/guest_service.dart';
@@ -146,7 +147,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           return const Center(
                               child: CircularProgressIndicator());
                         }
-                        final docs = snapshot.data!.docs;
+                        final docs = snapshot.data!.docs.toList()
+                          ..sort((a, b) {
+                            final aDeleted =
+                                (a.data() as Map<String, dynamic>)['deletedAt'];
+                            final bDeleted =
+                                (b.data() as Map<String, dynamic>)['deletedAt'];
+                            final aTime = aDeleted is Timestamp
+                                ? aDeleted.toDate()
+                                : DateTime.fromMillisecondsSinceEpoch(0);
+                            final bTime = bDeleted is Timestamp
+                                ? bDeleted.toDate()
+                                : DateTime.fromMillisecondsSinceEpoch(0);
+                            return bTime.compareTo(aTime);
+                          });
                         if (docs.isEmpty) {
                           return const Center(
                               child: Text('ไม่มีรายการในถังขยะ'));
@@ -156,32 +170,119 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             itemBuilder: (context, index) {
                               final doc = docs[index];
                               final data = doc.data() as Map<String, dynamic>;
+                              final amount =
+                                  (data['amount'] as num?)?.toDouble() ?? 0;
+                              final transactionDate = DateTime.tryParse(
+                                  data['date']?.toString() ?? '');
+                              final deletedAt = data['deletedAt'] is Timestamp
+                                  ? (data['deletedAt'] as Timestamp)
+                                      .toDate()
+                                      .toLocal()
+                                  : null;
+                              final isExpense = data['isExpense'] == true ||
+                                  data['isExpense'] == 1;
                               return Card(
                                   margin: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 5),
-                                  child: ListTile(
-                                      title:
-                                          Text(data['title']?.toString() ?? ''),
-                                      subtitle: Text(data['deletedAt']
-                                              is Timestamp
-                                          ? 'ลบเมื่อ ${(data['deletedAt'] as Timestamp).toDate().toLocal()}'
-                                          : ''),
-                                      trailing: Wrap(children: [
-                                        IconButton(
-                                            tooltip: 'กู้คืน',
-                                            icon: const Icon(Icons.restore),
-                                            onPressed: () => doc.reference
-                                                    .update({
-                                                  'deletedAt':
-                                                      FieldValue.delete()
-                                                })),
-                                        IconButton(
-                                            tooltip: 'ลบถาวร',
-                                            icon: const Icon(
-                                                Icons.delete_forever_outlined),
-                                            onPressed: () =>
-                                                doc.reference.delete())
-                                      ])));
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(children: [
+                                      CircleAvatar(
+                                        backgroundColor: (isExpense
+                                                ? Colors.red
+                                                : Colors.green)
+                                            .withValues(alpha: .12),
+                                        child: Icon(
+                                            isExpense
+                                                ? Icons.south_west
+                                                : Icons.north_east,
+                                            color: isExpense
+                                                ? Colors.red
+                                                : Colors.green),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                          child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                            Row(children: [
+                                              Expanded(
+                                                  child: Text(
+                                                      data['title']
+                                                              ?.toString() ??
+                                                          '',
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w700),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow
+                                                          .ellipsis)),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                  '${isExpense ? '−' : '+'}${NumberFormat('#,##0.00').format(amount)} ฿',
+                                                  style: TextStyle(
+                                                      color: isExpense
+                                                          ? Colors.red
+                                                          : Colors.green,
+                                                      fontWeight:
+                                                          FontWeight.bold))
+                                            ]),
+                                            const SizedBox(height: 5),
+                                            Text(
+                                                '${isExpense ? 'รายจ่าย' : 'รายรับ'} · ${data['category'] ?? 'ไม่ระบุ'} · ${data['paymentMethod'] ?? 'ไม่ระบุ'}',
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall),
+                                            if (transactionDate != null)
+                                              Text(
+                                                  'วันที่รายการ ${DateFormat('dd/MM/yyyy HH:mm').format(transactionDate)}',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall),
+                                            if (deletedAt != null)
+                                              Text(
+                                                  'ลบเมื่อ ${DateFormat('dd/MM/yyyy HH:mm').format(deletedAt)}',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .error)),
+                                          ])),
+                                      const SizedBox(width: 4),
+                                      Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                                constraints:
+                                                    const BoxConstraints(),
+                                                padding:
+                                                    const EdgeInsets.all(8),
+                                                tooltip: 'กู้คืน',
+                                                icon: const Icon(Icons.restore),
+                                                onPressed: () => doc.reference
+                                                        .update({
+                                                      'deletedAt':
+                                                          FieldValue.delete()
+                                                    })),
+                                            IconButton(
+                                                constraints:
+                                                    const BoxConstraints(),
+                                                padding:
+                                                    const EdgeInsets.all(8),
+                                                tooltip: 'ลบถาวร',
+                                                icon: const Icon(Icons
+                                                    .delete_forever_outlined),
+                                                onPressed: () =>
+                                                    doc.reference.delete()),
+                                          ]),
+                                    ]),
+                                  ));
                             });
                       }),
                 )));
