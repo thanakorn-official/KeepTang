@@ -62,25 +62,6 @@
 </table>
 </div>
 
-## เริ่มต้นใช้งาน
-
-### สิ่งที่ต้องมี
-
-- Flutter SDK และ Dart SDK
-- Android Studio หรืออุปกรณ์สำหรับรันแอป Flutter
-- โปรเจกต์ Firebase ที่ตั้งค่า Cloud Firestore แล้ว
-
-### รันบนเครื่อง
-
-```bash
-git clone https://github.com/thanakorn-official/KeepTang.git
-cd KeepTang
-flutter pub get
-flutter run
-```
-
-การเชื่อมต่อ Firebase ต้องตั้งค่าไฟล์ของโปรเจกต์ก่อนรัน เช่น `lib/firebase_options.dart` และ `android/app/google-services.json` ไฟล์กำหนดค่าเหล่านี้ไม่ได้รวมอยู่ใน repository
-
 ## เทคโนโลยี
 
 - **Flutter และ Dart** — แอปพลิเคชันและส่วนติดต่อผู้ใช้
