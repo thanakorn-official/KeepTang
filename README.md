@@ -1,52 +1,43 @@
-<div align="center">
+# 💚 KeepTang
 
-<img src="./assets/branding/readme_banner.svg" width="100%" alt="KeepTang — แอปบันทึกรายรับรายจ่าย" />
-
-# KeepTang · เก็บตัง
-
-**บันทึกง่าย เห็นภาพเงินชัดขึ้น**
-
-รายรับ รายจ่าย และทุกความเคลื่อนไหวของเงิน อยู่ในแอปเดียว
-
-<p>
-  <img src="https://img.shields.io/badge/Android-3DDC84?style=flat-square&amp;logo=android&amp;logoColor=white" alt="Android" />
-  <img src="https://img.shields.io/badge/ภาษา-ไทย%20%2F%20English-0A665E?style=flat-square" alt="ภาษาไทยและอังกฤษ" />
-  <img src="https://img.shields.io/badge/เวอร์ชัน-1.4.5-0A665E?style=flat-square" alt="เวอร์ชัน 1.4.5" />
+<p align="center">
+  <img src="https://img.shields.io/badge/KeepTang-Personal%20Finance-16A34A?style=flat-square" alt="KeepTang Personal Finance" />
+  <img src="https://img.shields.io/badge/Status-Development-blue?style=flat-square" alt="Development status" />
+  <img src="https://img.shields.io/badge/Version-1.4.5-0A665E?style=flat-square" alt="Version 1.4.5" />
 </p>
 
-[เกี่ยวกับแอป](#about) · [ฟีเจอร์เด่น](#highlights) · [ภาพตัวอย่าง](#screenshots) · [ข้อมูลแอป](#app-info)
-
-</div>
+<p align="center">
+  แอปพลิเคชันสำหรับบันทึกรายรับและรายจ่ายส่วนบุคคล<br />
+  ช่วยให้การจัดการเงินในแต่ละวันเป็นเรื่องง่ายขึ้น
+</p>
 
 ---
 
-<a id="about"></a>
-## เกี่ยวกับแอป
+## 📌 About
 
-KeepTang ช่วยให้การดูแลเงินในแต่ละวันเป็นเรื่องง่าย บันทึกรายรับรายจ่ายได้ทันที แยกเงินตามบัญชี ค้นหารายการย้อนหลัง และดูกราฟสรุปเพื่อเข้าใจว่าเงินของคุณไปไหน
+KeepTang เป็นแอปบันทึกรายรับรายจ่ายที่ช่วยติดตามเงินในชีวิตประจำวัน ดูรายการย้อนหลัง ยอดคงเหลือ และภาพรวมการใช้จ่าย แยกข้อมูลตามบัญชี หมวดหมู่ และช่องทางชำระเงินได้
 
-มีสลิปอยู่ในเครื่อง? เลือกรูปภาพให้แอปช่วยอ่านข้อความ ตรวจสอบรายละเอียดก่อนบันทึก แล้วกลับมาดูรายการทั้งหมดได้ในที่เดียว
+แอปอยู่ระหว่างพัฒนา โหมด Guest ยังไม่มีบัญชีสำหรับกู้คืนข้อมูลข้ามเครื่อง และ [กฎ Firestore](./firestore.rules) ยังเปิดให้เข้าถึงข้อมูล Guest โดยไม่ยืนยันตัวตน จึงเหมาะสำหรับการทดลองหรือสาธิตมากกว่าการเก็บข้อมูลการเงินจริง
 
-<a id="highlights"></a>
-## ฟีเจอร์เด่น
+## ✨ Features
 
-| | สิ่งที่ทำได้ |
-|:---:|---|
-| 📊 | **ภาพรวมชัดเจน** — ดูรายรับ รายจ่าย ยอดคงเหลือ และกราฟตามหมวดหมู่ |
-| ✍️ | **บันทึกได้ตามจริง** — เพิ่ม แก้ไข ลบ และเรียกคืนรายการ พร้อมกำหนดวันเวลา |
-| 🧾 | **เพิ่มรายการจากสลิป** — ช่วยอ่านข้อมูลจากภาพและให้ตรวจแก้ก่อนบันทึก |
-| 🔎 | **ค้นหาได้เร็ว** — กรองตามหมวดหมู่ ช่องทางชำระเงิน และช่วงเวลา |
-| 💳 | **ดูเงินแยกบัญชี** — ติดตามยอดและบันทึกการโอนระหว่างบัญชี |
-| 🎨 | **ปรับให้เข้ากับคุณ** — เลือกหมวดหมู่ ไอคอน ธีมสว่างหรือมืด และภาษาไทยหรืออังกฤษ |
-| 📤 | **นำข้อมูลออกได้** — ส่งออกรายการและรายงานเป็น CSV หรือ PDF |
+- 💰 บันทึกรายรับและรายจ่าย พร้อมกำหนดวันและเวลา
+- 📊 ดูยอดคงเหลือและกราฟสรุปแยกตามหมวดหมู่
+- 📅 ค้นหา กรอง และดูประวัติรายการย้อนหลัง
+- 🧾 อ่านข้อมูลจากภาพสลิป แล้วตรวจแก้ก่อนบันทึก
+- 💳 แยกยอดตามบัญชีและบันทึกการโอนเงินระหว่างบัญชี
+- 🗂️ จัดการหมวดหมู่ ไอคอน และช่องทางชำระเงิน
+- 📤 ส่งออกข้อมูลเป็น CSV และรายงาน PDF
+- 🌗 เลือกธีมสว่างหรือมืด และภาษาไทยหรืออังกฤษ
 
-<a id="screenshots"></a>
-## ภาพตัวอย่าง
+## 🖥️ Screenshots
+
+<p align="center"><i>Application Preview</i></p>
 
 <div align="center">
 <table>
   <tr>
-    <td align="center"><a href="./screenshot/Dashboard.png"><img src="./screenshot/Dashboard.png" width="250" alt="หน้าแสดงภาพรวมการเงิน" /></a><br /><strong>ภาพรวมการเงิน</strong></td>
+    <td align="center"><a href="./screenshot/Dashboard.png"><img src="./screenshot/Dashboard.png" width="250" alt="หน้า Dashboard" /></a><br /><strong>Dashboard</strong></td>
     <td align="center"><a href="./screenshot/AddTransaction.png"><img src="./screenshot/AddTransaction.png" width="250" alt="หน้าเพิ่มรายการ" /></a><br /><strong>เพิ่มรายการ</strong></td>
   </tr>
   <tr>
@@ -56,24 +47,46 @@ KeepTang ช่วยให้การดูแลเงินในแต่�
 </table>
 </div>
 
-<a id="app-info"></a>
-## ข้อมูลแอป
+## 🛠️ Tech Stack
 
-| รายการ | รายละเอียด |
-|---|---|
-| เวอร์ชัน | 1.4.5 |
-| แพลตฟอร์ม | Android |
-| ภาษา | ไทย, English |
-| ผู้พัฒนา | [thanakorn-official](https://github.com/thanakorn-official) |
+- **Frontend:** Flutter และ Dart
+- **Backend / Database:** Firebase Cloud Firestore
+- **อ่านข้อความจากสลิป:** Google ML Kit Text Recognition
+- **กราฟ:** FL Chart
+- **การตั้งค่าในเครื่อง:** SharedPreferences
 
-## ข้อมูลและความเป็นส่วนตัว
+## 📂 Project Structure
 
-โหมด Guest ใช้ ID ของอุปกรณ์และยังไม่มีบัญชีสำหรับกู้คืนข้อมูลข้ามเครื่อง กฎ [Firestore Security Rules](./firestore.rules) ในโปรเจกต์ยังอนุญาตให้อ่านและเขียนข้อมูล Guest โดยไม่ยืนยันตัวตน **แอปเวอร์ชันนี้เหมาะสำหรับการทดลองหรือสาธิต และยังไม่ควรใช้เก็บข้อมูลการเงินจริง** จนกว่าจะเพิ่มระบบยืนยันตัวตนและปรับกฎความปลอดภัย
+```text
+KeepTang/
+├── lib/
+│   ├── main.dart
+│   ├── models/
+│   ├── screens/
+│   ├── services/
+│   ├── utils/
+│   └── widgets/
+├── assets/branding/
+├── screenshot/
+├── test/
+├── tool/
+├── android/
+├── ios/
+├── web/
+├── windows/
+├── macos/
+├── linux/
+├── pubspec.yaml
+└── README.md
+```
+
+## 👨‍💻 Developer
+
+Developed by **[thanakorn-official](https://github.com/thanakorn-official)** · [Source code](https://github.com/thanakorn-official/KeepTang)
 
 ---
 
-<div align="center">
-
-[ดูซอร์สโค้ด KeepTang](https://github.com/thanakorn-official/KeepTang)
-
-</div>
+<p align="center">
+  Made with 💚<br />
+  <b>KeepTang — Keep Track of Your Money.</b>
+</p>

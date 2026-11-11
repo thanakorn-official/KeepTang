@@ -2,7 +2,7 @@ name: keeptang
 description: KeepTang (เก็บตัง) — แอปบันทึกรายรับ-รายจ่ายส่วนบุคคล
 publish_to: 'none'
 
-version: 1.4.5+6
+version: 1.4.5+7
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -37,6 +37,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/branding/logo.svg
+    - assets/branding/app_icon.svg
     - assets/branding/loading_rings.svg
     - assets/branding/loading_receipt.svg
 
@@ -44,7 +45,7 @@ flutter_launcher_icons:
   android: "keeptang_receipt"
   ios: true
   image_path: "assets/branding/app_icon.png"
-  adaptive_icon_background: "#0A665E"
+  adaptive_icon_background: "#00000000"
   adaptive_icon_foreground: "assets/branding/logo_foreground.png"
   adaptive_icon_monochrome: "assets/branding/logo_foreground.png"
   adaptive_icon_foreground_inset: 18

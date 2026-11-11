@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../main.dart';
 import '../services/guest_service.dart';
 import '../utils/l10n.dart';
+import '../widgets/skeleton_loader.dart';
 import 'splash_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  bool _loadingSettings = true;
   static const _unspecified = '\u0e44\u0e21\u0e48\u0e23\u0e30\u0e1a\u0e38';
   Future<void> _settingsSaveQueue = Future<void>.value();
   List<String> _categories = [
@@ -173,8 +175,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           body: StreamBuilder<QuerySnapshot>(
             stream: _transactionsCollection.snapshots(),
             builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text(T.get('loadError')));
+              }
               if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
+                return const SkeletonPulse(child: SkeletonList());
               }
               final docs = snapshot.data!.docs.where(_isInTrash).toList()
                 ..sort((a, b) {
@@ -487,61 +492,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadData() async {
-    await _purgeExpiredTrash();
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      await _purgeExpiredTrash();
+      final prefs = await SharedPreferences.getInstance();
 
-    final customCats = prefs.getString('app_categories_list');
-    if (customCats != null) {
-      final List<dynamic> decoded = jsonDecode(customCats);
-      setState(() {
-        _categories = decoded.map((e) => e.toString()).toList();
-        if (!_categories.contains(_unspecified)) {
-          _categories.insert(0, _unspecified);
-        }
-      });
-    }
+      final customCats = prefs.getString('app_categories_list');
+      if (customCats != null) {
+        final List<dynamic> decoded = jsonDecode(customCats);
+        setState(() {
+          _categories = decoded.map((e) => e.toString()).toList();
+          if (!_categories.contains(_unspecified)) {
+            _categories.insert(0, _unspecified);
+          }
+        });
+      }
 
-    final catIconsStr = prefs.getString('app_category_icon_codes');
-    if (catIconsStr != null) {
-      final Map<String, dynamic> decoded = jsonDecode(catIconsStr);
-      setState(() {
-        _categoryIconCodes = decoded.map((k, v) => MapEntry(k, v as int));
-      });
-    }
+      final catIconsStr = prefs.getString('app_category_icon_codes');
+      if (catIconsStr != null) {
+        final Map<String, dynamic> decoded = jsonDecode(catIconsStr);
+        setState(() {
+          _categoryIconCodes = decoded.map((k, v) => MapEntry(k, v as int));
+        });
+      }
 
-    final catColorsStr = prefs.getString('app_category_color_values');
-    if (catColorsStr != null) {
-      final Map<String, dynamic> decoded = jsonDecode(catColorsStr);
-      setState(() {
-        _categoryColorValues = decoded.map((k, v) => MapEntry(k, v as int));
-      });
-    }
+      final catColorsStr = prefs.getString('app_category_color_values');
+      if (catColorsStr != null) {
+        final Map<String, dynamic> decoded = jsonDecode(catColorsStr);
+        setState(() {
+          _categoryColorValues = decoded.map((k, v) => MapEntry(k, v as int));
+        });
+      }
 
-    final customPayments = prefs.getString('app_payments_list');
-    if (customPayments != null) {
-      final List<dynamic> decoded = jsonDecode(customPayments);
-      setState(() {
-        _payments = decoded.map((e) => e.toString()).toList();
-        if (!_payments.contains(_unspecified)) {
-          _payments.insert(0, _unspecified);
-        }
-      });
-    }
+      final customPayments = prefs.getString('app_payments_list');
+      if (customPayments != null) {
+        final List<dynamic> decoded = jsonDecode(customPayments);
+        setState(() {
+          _payments = decoded.map((e) => e.toString()).toList();
+          if (!_payments.contains(_unspecified)) {
+            _payments.insert(0, _unspecified);
+          }
+        });
+      }
 
-    final payIconsStr = prefs.getString('app_payment_icon_codes');
-    if (payIconsStr != null) {
-      final Map<String, dynamic> decoded = jsonDecode(payIconsStr);
-      setState(() {
-        _paymentIconCodes = decoded.map((k, v) => MapEntry(k, v as int));
-      });
-    }
+      final payIconsStr = prefs.getString('app_payment_icon_codes');
+      if (payIconsStr != null) {
+        final Map<String, dynamic> decoded = jsonDecode(payIconsStr);
+        setState(() {
+          _paymentIconCodes = decoded.map((k, v) => MapEntry(k, v as int));
+        });
+      }
 
-    final payColorsStr = prefs.getString('app_payment_color_values');
-    if (payColorsStr != null) {
-      final Map<String, dynamic> decoded = jsonDecode(payColorsStr);
-      setState(() {
-        _paymentColorValues = decoded.map((k, v) => MapEntry(k, v as int));
-      });
+      final payColorsStr = prefs.getString('app_payment_color_values');
+      if (payColorsStr != null) {
+        final Map<String, dynamic> decoded = jsonDecode(payColorsStr);
+        setState(() {
+          _paymentColorValues = decoded.map((k, v) => MapEntry(k, v as int));
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _loadingSettings = false);
     }
   }
 
@@ -1342,139 +1351,147 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context, currentLang, child) {
         return Scaffold(
           appBar: AppBar(title: Text(T.get('settings'))),
-          body: ListView(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              top: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 24,
-            ),
-            children: [
-              Text(T.get('account'),
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              _buildGuestCard(),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _signOut,
-                icon: const Icon(Icons.logout),
-                label: Text(T.get('signOut')),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                child: Column(
+          body: _loadingSettings
+              ? const SkeletonPulse(child: SkeletonList(itemCount: 6))
+              : ListView(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 16,
+                    bottom: MediaQuery.of(context).padding.bottom + 24,
+                  ),
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.category_outlined),
-                      title: Text(T.get('manageCategories')),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: _openManageCategoriesScreen,
+                    Text(T.get('account'),
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    _buildGuestCard(),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _signOut,
+                      icon: const Icon(Icons.logout),
+                      label: Text(T.get('signOut')),
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.payment_outlined),
-                      title: Text(T.get('managePayments')),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: _openManagePaymentsScreen,
+                    const SizedBox(height: 16),
+                    Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.category_outlined),
+                            title: Text(T.get('manageCategories')),
+                            trailing:
+                                const Icon(Icons.arrow_forward_ios, size: 16),
+                            onTap: _openManageCategoriesScreen,
+                          ),
+                          const Divider(height: 1),
+                          ListTile(
+                            leading: const Icon(Icons.payment_outlined),
+                            title: Text(T.get('managePayments')),
+                            trailing:
+                                const Icon(Icons.arrow_forward_ios, size: 16),
+                            onTap: _openManagePaymentsScreen,
+                          ),
+                          const Divider(height: 1),
+                          ListTile(
+                              leading: const Icon(Icons.delete_outline),
+                              title: Text(T.get('trash')),
+                              trailing:
+                                  const Icon(Icons.arrow_forward_ios, size: 16),
+                              onTap: _openTrash),
+                          const Divider(height: 1),
+                        ],
+                      ),
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                        leading: const Icon(Icons.delete_outline),
-                        title: Text(T.get('trash')),
-                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                        onTap: _openTrash),
-                    const Divider(height: 1),
+                    const SizedBox(height: 16),
+                    Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      child: ListTile(
+                        leading: const Icon(Icons.palette_outlined),
+                        title: Text(T.get('theme')),
+                        trailing: ValueListenableBuilder<String>(
+                          valueListenable: themeNotifier,
+                          builder: (context, currentTheme, _) {
+                            return DropdownButton<String>(
+                              value: currentTheme,
+                              underline: const SizedBox(),
+                              items: [
+                                DropdownMenuItem(
+                                    value: 'light',
+                                    child: Text(T.get('lightMode'))),
+                                DropdownMenuItem(
+                                    value: 'dark',
+                                    child: Text(T.get('darkMode'))),
+                              ],
+                              onChanged: (val) async {
+                                if (val != null) {
+                                  themeNotifier.value = val;
+                                  final prefs =
+                                      await SharedPreferences.getInstance();
+                                  await prefs.setString('app_theme_mode', val);
+                                }
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      child: ListTile(
+                        leading: const Icon(Icons.language),
+                        title: Text(T.get('language')),
+                        trailing: DropdownButton<String>(
+                          value: currentLang,
+                          underline: const SizedBox(),
+                          items: [
+                            DropdownMenuItem(
+                                value: 'th',
+                                child: Text(T.get('thaiLanguage'))),
+                            DropdownMenuItem(
+                                value: 'en',
+                                child: Text(T.get('englishLanguage'))),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) languageNotifier.value = val;
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(T.get('about'),
+                                style: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 8),
+                            Text(
+                                T.get('app_version').replaceAll(
+                                    '{version}', appBuildName ?? '—'),
+                                style: const TextStyle(color: Colors.grey)),
+                            const SizedBox(height: 4),
+                            Text(T.get('about_desc'),
+                                style: const TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                child: ListTile(
-                  leading: const Icon(Icons.palette_outlined),
-                  title: Text(T.get('theme')),
-                  trailing: ValueListenableBuilder<String>(
-                    valueListenable: themeNotifier,
-                    builder: (context, currentTheme, _) {
-                      return DropdownButton<String>(
-                        value: currentTheme,
-                        underline: const SizedBox(),
-                        items: [
-                          DropdownMenuItem(
-                              value: 'light', child: Text(T.get('lightMode'))),
-                          DropdownMenuItem(
-                              value: 'dark', child: Text(T.get('darkMode'))),
-                        ],
-                        onChanged: (val) async {
-                          if (val != null) {
-                            themeNotifier.value = val;
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.setString('app_theme_mode', val);
-                          }
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                child: ListTile(
-                  leading: const Icon(Icons.language),
-                  title: Text(T.get('language')),
-                  trailing: DropdownButton<String>(
-                    value: currentLang,
-                    underline: const SizedBox(),
-                    items: [
-                      DropdownMenuItem(
-                          value: 'th', child: Text(T.get('thaiLanguage'))),
-                      DropdownMenuItem(
-                          value: 'en', child: Text(T.get('englishLanguage'))),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) languageNotifier.value = val;
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(T.get('about'),
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text(
-                          T
-                              .get('app_version')
-                              .replaceAll('{version}', appBuildName ?? '—')
-                              .replaceAll('{build}', appBuildNumber ?? '—'),
-                          style: const TextStyle(color: Colors.grey)),
-                      const SizedBox(height: 4),
-                      Text(T.get('about_desc'),
-                          style: const TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
         );
       },
     );

@@ -33,7 +33,7 @@ class _SplashScreenState extends State<SplashScreen>
     )..repeat();
     _finishController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 720),
+      duration: const Duration(milliseconds: 420),
     );
     _prepareAndNavigate();
   }
@@ -116,15 +116,11 @@ class _SplashScreenState extends State<SplashScreen>
                             ),
                           ),
                         ),
-                        Transform.scale(
-                          scale:
-                              1 + 2.2 * Curves.easeInCubic.transform(progress),
-                          child: SvgPicture.asset(
-                            'assets/branding/loading_receipt.svg',
-                            width: logoSize,
-                            height: logoSize,
-                            semanticsLabel: T.get('appTitle'),
-                          ),
+                        SvgPicture.asset(
+                          'assets/branding/loading_receipt.svg',
+                          width: logoSize,
+                          height: logoSize,
+                          semanticsLabel: T.get('appTitle'),
                         ),
                       ],
                     ),

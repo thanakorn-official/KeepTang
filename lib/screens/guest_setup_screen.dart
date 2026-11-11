@@ -8,6 +8,7 @@ import '../main.dart';
 import '../services/guest_service.dart';
 import '../utils/l10n.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/skeleton_loader.dart';
 import 'dashboard_screen.dart';
 
 class GuestSetupScreen extends StatefulWidget {
@@ -334,7 +335,6 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                     const SizedBox(height: 28),
                     AppLogo(
                       size: 104,
-                      withBackground: true,
                       semanticLabel: T.get('appTitle'),
                     ),
                     const SizedBox(height: 28),
@@ -474,11 +474,8 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                               borderRadius: BorderRadius.circular(14)),
                         ),
                         child: _busy
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                            ? const SkeletonPulse(
+                                child: SkeletonBlock(width: 110, height: 18),
                               )
                             : Text(
                                 _isRestoring

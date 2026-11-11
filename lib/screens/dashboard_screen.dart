@@ -17,6 +17,7 @@ import '../services/guest_service.dart';
 import '../services/slip_inbox_service.dart';
 import '../services/slip_ocr_parser.dart';
 import '../utils/l10n.dart';
+import '../widgets/skeleton_loader.dart';
 import 'settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -3124,11 +3125,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                         tooltip: T.get('scanSlip'),
                         onPressed: isReadingSlip ? null : readSlip,
                         icon: isReadingSlip
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                            ? const SkeletonPulse(
+                                child: SkeletonBlock(
+                                  width: 18,
+                                  height: 18,
+                                  radius: 9,
+                                ),
                               )
                             : const Icon(Icons.document_scanner_outlined),
                       ),
@@ -4350,7 +4352,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                             children: [
                               _buildUserProfileHeader(currentBalance: null),
                               paymentSelector,
-                              Expanded(child: _buildDashboardSkeleton()),
+                              Expanded(
+                                child: SkeletonPulse(
+                                  child: _buildDashboardSkeleton(),
+                                ),
+                              ),
                             ],
                           );
                         }

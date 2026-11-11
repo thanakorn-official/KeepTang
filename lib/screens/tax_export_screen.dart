@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/transaction_model.dart';
 import '../services/tax_export_service.dart';
+import '../widgets/skeleton_loader.dart';
 
 class TaxExportScreen extends StatefulWidget {
   const TaxExportScreen(
@@ -18,6 +19,17 @@ class TaxExportScreen extends StatefulWidget {
 class _TaxExportScreenState extends State<TaxExportScreen> {
   late DateTime _selectedMonth;
   var _type = _TaxType.sales;
+  bool _exporting = false;
+
+  Future<void> _runExport(Future<void> Function() export) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      await export();
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
   @override
   void initState() {
@@ -99,26 +111,35 @@ class _TaxExportScreenState extends State<TaxExportScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            children: [
-              FilledButton.icon(
-                onPressed: txs.isEmpty
-                    ? null
-                    : () => TaxExportService.exportRdPrepCsv(txs),
-                icon: const Icon(Icons.table_view_outlined),
-                label: const Text('Export CSV'),
-              ),
-              OutlinedButton.icon(
-                onPressed: txs.isEmpty
-                    ? null
-                    : () => TaxExportService.exportPrintablePdf(
-                        txs, widget.company, monthYear),
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                label: const Text('Export PDF'),
-              ),
-            ],
-          ),
+          if (_exporting)
+            const SkeletonPulse(
+              child: SkeletonBlock(width: 260, height: 42, radius: 12),
+            )
+          else
+            Wrap(
+              spacing: 12,
+              children: [
+                FilledButton.icon(
+                  onPressed: txs.isEmpty
+                      ? null
+                      : () => _runExport(
+                            () => TaxExportService.exportRdPrepCsv(txs),
+                          ),
+                  icon: const Icon(Icons.table_view_outlined),
+                  label: const Text('Export CSV'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: txs.isEmpty
+                      ? null
+                      : () => _runExport(
+                            () => TaxExportService.exportPrintablePdf(
+                                txs, widget.company, monthYear),
+                          ),
+                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                  label: const Text('Export PDF'),
+                ),
+              ],
+            ),
           const SizedBox(height: 20),
           Text('Validation', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
