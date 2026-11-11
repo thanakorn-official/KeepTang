@@ -1,4 +1,4 @@
-# 💚 KeepTang
+<img src="./assets/branding/readme_banner.svg" width="100%" alt="KeepTang — บันทึกรายรับรายจ่าย" />
 
 <p align="center">
   <img src="https://img.shields.io/badge/KeepTang-Personal%20Finance-16A34A?style=flat-square" alt="KeepTang Personal Finance" />
@@ -81,9 +81,7 @@ KeepTang/
 ```
 
 ## 👨‍💻 Developer
-
 Developed by **[thanakorn-official](https://github.com/thanakorn-official)** · [Source code](https://github.com/thanakorn-official/KeepTang)
-
 ---
 
 <p align="center">
