@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../services/guest_service.dart';
 import '../utils/l10n.dart';
+import '../widgets/app_logo.dart';
 import 'dashboard_screen.dart';
 
 class GuestSetupScreen extends StatefulWidget {
@@ -331,12 +332,9 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                   children: [
                     _buildPreferences(scheme),
                     const SizedBox(height: 28),
-                    Image.asset(
-                      'assets/splash_bill_base.png',
-                      width: 104,
-                      height: 104,
-                      fit: BoxFit.contain,
-                      color: scheme.onSurface,
+                    AppLogo(
+                      size: 104,
+                      withBackground: true,
                       semanticLabel: T.get('appTitle'),
                     ),
                     const SizedBox(height: 28),

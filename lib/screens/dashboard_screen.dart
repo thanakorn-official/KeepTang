@@ -599,7 +599,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               items: _categoryIcons.keys
                                   .map((item) => DropdownMenuItem(
                                         value: item,
-                                        child: Text(T.get(item)),
+                                        child: Text(item),
                                       ))
                                   .toList(),
                               onChanged: (value) {
@@ -617,7 +617,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               items: _paymentIcons.keys
                                   .map((item) => DropdownMenuItem(
                                         value: item,
-                                        child: Text(T.get(item)),
+                                        child: Text(item),
                                       ))
                                   .toList(),
                               onChanged: (value) {
