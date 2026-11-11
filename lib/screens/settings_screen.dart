@@ -1460,7 +1460,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      Text(T.get('app_version'),
+                      Text(
+                          T
+                              .get('app_version')
+                              .replaceAll('{version}', appBuildName ?? '—')
+                              .replaceAll('{build}', appBuildNumber ?? '—'),
                           style: const TextStyle(color: Colors.grey)),
                       const SizedBox(height: 4),
                       Text(T.get('about_desc'),

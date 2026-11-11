@@ -72,7 +72,7 @@ class T {
       'language': 'ภาษา',
       'theme': 'ธีมหน้าจอ',
       'about': 'เกี่ยวกับแอป',
-      'app_version': 'เวอร์ชัน 1.3.1',
+      'app_version': 'เวอร์ชัน {version} (Build {build})',
       'about_desc':
           'KeepTang (เก็บตัง) แอปจัดการการเงินส่วนบุคคล พัฒนาด้วย Flutter และ Firebase เพื่อติดตามรายรับ-รายจ่ายได้อย่างมีประสิทธิภาพ',
       'account': 'บัญชีผู้ใช้',
@@ -249,7 +249,7 @@ class T {
       'language': 'Language',
       'theme': 'App Theme',
       'about': 'About App',
-      'app_version': 'Version 1.3.1',
+      'app_version': 'Version {version} (Build {build})',
       'about_desc':
           'KeepTang (เก็บตัง) is a personal finance app built with Flutter and Firebase to track income and expenses.',
       'account': 'Account',

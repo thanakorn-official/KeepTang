@@ -1,83 +1,100 @@
 <div align="center">
 
-<img src="./assets/branding/app_icon.svg" alt="KeepTang app icon" width="112" />
+<img src="./assets/branding/readme_banner.svg" width="100%" alt="KeepTang — บันทึกรายรับรายจ่าย" />
 
-# KeepTang (เก็บตัง)
+<br />
 
-**บันทึกรายรับ–รายจ่าย เห็นภาพรวมการเงินได้ในที่เดียว**
+**บันทึกง่าย เห็นภาพเงินชัดขึ้น**
 
-แอปจัดการการเงินส่วนบุคคลที่ช่วยให้การจดรายการ ติดตามยอดเงิน และทบทวนพฤติกรรมการใช้จ่ายเป็นเรื่องง่าย
+แอปจัดการรายรับรายจ่ายส่วนตัว สำหรับบันทึกรายการ ดูยอดเงิน และทบทวนการใช้จ่ายในที่เดียว
 
 <p>
-  <img src="https://img.shields.io/badge/Flutter-02569B?style=flat-square&logo=flutter&logoColor=white" alt="Flutter" />
-  <img src="https://img.shields.io/badge/Dart-0175C2?style=flat-square&logo=dart&logoColor=white" alt="Dart" />
-  <img src="https://img.shields.io/badge/Firebase-FFCA28?style=flat-square&logo=firebase&logoColor=black" alt="Firebase" />
-  <img src="https://img.shields.io/badge/version-1.3.1-0A665E?style=flat-square" alt="Version 1.3.1" />
+  <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&amp;logo=flutter&amp;logoColor=white" alt="Flutter" />
+  <img src="https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&amp;logo=dart&amp;logoColor=white" alt="Dart" />
+  <img src="https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&amp;logo=firebase&amp;logoColor=black" alt="Firebase" />
+  <img src="https://img.shields.io/badge/version-1.4.5-0A665E?style=for-the-badge" alt="Version 1.4.5" />
 </p>
 
-[คุณสมบัติ](#คุณสมบัติ) · [ภาพหน้าจอ](#ภาพหน้าจอ) · [เริ่มต้นใช้งาน](#เริ่มต้นใช้งาน) · [เทคโนโลยี](#เทคโนโลยี)
+[ความสามารถ](#features) · [ภาพหน้าจอ](#screenshots) · [เริ่มต้นใช้งาน](#getting-started) · [เทคโนโลยี](#stack)
 
 </div>
 
 ---
 
-## คุณสมบัติ
+<a id="features"></a>
+## ความสามารถ
 
-| | คุณสมบัติ | รายละเอียด |
-|---|---|---|
-| 📊 | **Dashboard การเงิน** | ดูรายรับ รายจ่าย ยอดคงเหลือ และกราฟแยกตามหมวดหมู่ |
-| ✍️ | **จัดการรายการ** | เพิ่ม แก้ไข ลบ และเรียกคืนรายการ พร้อมกำหนดวันและเวลา |
-| 🧾 | **บันทึกจากสลิป** | อ่านยอดเงิน วันที่ และเลขรายการจากภาพสลิป พร้อมตรวจแก้ก่อนบันทึก |
-| 🔎 | **ค้นหาและตัวกรอง** | ค้นหารายการและกรองตามหมวดหมู่ ช่องทางชำระเงิน หรือช่วงเวลา |
-| ☑️ | **จัดการหลายรายการ** | เลือกหลายรายการเพื่อแก้วันเวลา หมวดหมู่ หรือช่องทางชำระเงินพร้อมกัน |
-| 💳 | **แยกบัญชีและโอนเงิน** | ดูยอดตามบัญชีหรือช่องทางชำระเงิน และบันทึกการโอนระหว่างบัญชี |
-| 🎨 | **ปรับแต่งตามต้องการ** | จัดการหมวดหมู่ ไอคอน และช่องทางชำระเงิน |
-| 🌗 | **ใช้งานได้ตามสไตล์** | เลือกภาษาไทยหรืออังกฤษ และธีมสว่างหรือมืด |
-| 📤 | **นำข้อมูลออก** | ส่งออกรายการเป็น CSV หรือรายงาน PDF |
+| | ทำอะไรได้ | รายละเอียด |
+|:---:|---|---|
+| 📊 | **ดูภาพรวมการเงิน** | ดูรายรับ รายจ่าย ยอดคงเหลือ และกราฟแยกตามหมวดหมู่ |
+| ✍️ | **บันทึกรายการ** | เพิ่ม แก้ไข ลบ และเรียกคืนรายการ พร้อมกำหนดวันและเวลา |
+| 🧾 | **อ่านข้อมูลจากสลิป** | ดึงข้อมูลจากภาพสลิป แล้วตรวจแก้ก่อนบันทึก |
+| 🔎 | **ค้นหาและกรอง** | ค้นหารายการตามหมวดหมู่ ช่องทางชำระเงิน และช่วงเวลา |
+| ☑️ | **แก้ไขหลายรายการ** | เลือกหลายรายการเพื่อปรับวันเวลา หมวดหมู่ หรือช่องทางชำระเงินพร้อมกัน |
+| 💳 | **จัดการบัญชี** | แยกยอดตามบัญชีและบันทึกการโอนเงินระหว่างบัญชี |
+| 🎨 | **ปรับแต่งได้** | ตั้งหมวดหมู่ ไอคอน ช่องทางชำระเงิน ภาษา และธีม |
+| 📤 | **ส่งออกข้อมูล** | ส่งออกรายการและรายงานเป็น CSV หรือ PDF |
 
+<a id="screenshots"></a>
 ## ภาพหน้าจอ
 
 <div align="center">
 <table>
   <tr>
-    <td align="center">
-      <a href="./screenshot/Dashboard.png"><img src="./screenshot/Dashboard.png" width="260" alt="หน้า Dashboard แสดงบัญชี ยอดคงเหลือ และประวัติรายการ" /></a><br />
-      <strong>Dashboard</strong><br /><sub>ภาพรวมบัญชี ยอดเงิน และประวัติรายการ</sub>
-    </td>
-    <td align="center">
-      <a href="./screenshot/AddTransaction.png"><img src="./screenshot/AddTransaction.png" width="260" alt="แบบฟอร์มเพิ่มรายการพร้อมวันเวลา หมวดหมู่ และช่องทางชำระเงิน" /></a><br />
-      <strong>เพิ่มรายการ</strong><br /><sub>บันทึกรายรับหรือรายจ่ายพร้อมวันเวลา</sub>
-    </td>
+    <td align="center"><a href="./screenshot/Dashboard.png"><img src="./screenshot/Dashboard.png" width="250" alt="หน้า Dashboard" /></a><br /><strong>ภาพรวมการเงิน</strong></td>
+    <td align="center"><a href="./screenshot/AddTransaction.png"><img src="./screenshot/AddTransaction.png" width="250" alt="หน้าเพิ่มรายการ" /></a><br /><strong>เพิ่มรายการ</strong></td>
   </tr>
   <tr>
-    <td align="center">
-      <a href="./screenshot/SlipAdd.png"><img src="./screenshot/SlipAdd.png" width="260" alt="รายการสลิปที่เลือกตรวจสอบและเพิ่มเป็นรายการได้" /></a><br />
-      <strong>เพิ่มรายการจากสลิป</strong><br /><sub>ตรวจสอบสลิปและเลือกเพิ่มหลายรายการ</sub>
-    </td>
-    <td align="center">
-      <a href="./screenshot/Search.png"><img src="./screenshot/Search.png" width="260" alt="ค้นหาและจัดเรียงรายการทางการเงิน" /></a><br />
-      <strong>ค้นหาและจัดเรียง</strong><br /><sub>ค้นหาและเรียงรายการตามต้องการ</sub>
-    </td>
+    <td align="center"><a href="./screenshot/SlipAdd.png"><img src="./screenshot/SlipAdd.png" width="250" alt="หน้าเพิ่มรายการจากสลิป" /></a><br /><strong>เพิ่มจากสลิป</strong></td>
+    <td align="center"><a href="./screenshot/Search.png"><img src="./screenshot/Search.png" width="250" alt="หน้าค้นหารายการ" /></a><br /><strong>ค้นหารายการ</strong></td>
   </tr>
 </table>
 </div>
 
+<a id="getting-started"></a>
+## เริ่มต้นใช้งาน
+
+ติดตั้ง [Flutter SDK](https://docs.flutter.dev/get-started/install) และ Android SDK จากนั้นรันคำสั่งในโฟลเดอร์โปรเจกต์:
+
+```sh
+flutter pub get
+flutter run
+```
+
+สร้าง APK สำหรับ Android:
+
+```sh
+flutter clean
+flutter pub get
+flutter build apk --release
+```
+
+ไฟล์ที่ได้อยู่ที่ `build/app/outputs/flutter-apk/app-release.apk` เวอร์ชันของแอปกำหนดไว้ใน [`pubspec.yaml`](./pubspec.yaml)
+
+### ปรับไอคอนและโลโก้
+
+ต้นฉบับไอคอนคือ [`app_icon.svg`](./assets/branding/app_icon.svg) (พื้นหลังโปร่งใส วงแดง เขียว ฟ้า) ส่วน [`logo.svg`](./assets/branding/logo.svg) เป็นโลโก้สีขาวที่ใช้ภายในแอปและหน้าเปิดแอป เมื่อแก้ต้นฉบับแล้วให้สร้างไฟล์ PNG และไอคอนแพลตฟอร์มใหม่:
+
+```sh
+python -m pip install -r tool/branding-requirements.txt
+python tool/generate_branding.py
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+```
+
+<a id="stack"></a>
 ## เทคโนโลยี
 
-- **Flutter และ Dart** — แอปพลิเคชันและส่วนติดต่อผู้ใช้
-- **Firebase Cloud Firestore** — จัดเก็บข้อมูลรายการ
-- **Google ML Kit Text Recognition** — อ่านข้อความจากภาพสลิป
-- **SharedPreferences** — เก็บค่าตั้งค่าบนอุปกรณ์
-- **FL Chart** — แสดงกราฟสรุปข้อมูล
+**Flutter + Dart** สำหรับแอป · **Cloud Firestore** สำหรับข้อมูล · **Google ML Kit** สำหรับอ่านข้อความจากสลิป · **FL Chart** สำหรับกราฟ · **SharedPreferences** สำหรับการตั้งค่าบนอุปกรณ์
 
-## ข้อควรทราบด้านความปลอดภัย
+## ข้อควรทราบเกี่ยวกับข้อมูล
 
-โหมด Guest ใช้ ID เฉพาะอุปกรณ์เพื่อแยกข้อมูล และยังไม่มีระบบบัญชีสำหรับกู้คืนข้อมูลข้ามเครื่อง นอกจากนี้ [Firestore Security Rules](./firestore.rules) ใน repository อนุญาตให้อ่านและเขียนข้อมูลในคอลเลกชัน Guest โดยไม่ยืนยันตัวตน โปรเจกต์นี้จึงเหมาะสำหรับทดลองหรือสาธิตเท่านั้น **ไม่ควรใช้เก็บข้อมูลการเงินจริง** จนกว่าจะเพิ่มระบบยืนยันตัวตนและกำหนดกฎความปลอดภัยให้เหมาะสม
+โหมด Guest ใช้ ID ของอุปกรณ์และยังไม่มีระบบบัญชีสำหรับกู้คืนข้อมูลข้ามเครื่อง กฎ [Firestore Security Rules](./firestore.rules) ในโปรเจกต์ยังอนุญาตการอ่านและเขียนข้อมูลในคอลเลกชัน Guest โดยไม่ยืนยันตัวตน **โปรเจกต์นี้เหมาะสำหรับการทดลองหรือสาธิต และยังไม่ควรใช้เก็บข้อมูลการเงินจริง** จนกว่าจะเพิ่มระบบยืนยันตัวตนและปรับกฎความปลอดภัย
 
 ---
 
 <div align="center">
 
-พัฒนาโดย [thanakorn-official](https://github.com/thanakorn-official) · [ดูซอร์สโค้ด](https://github.com/thanakorn-official/KeepTang)
+พัฒนาโดย [thanakorn-official](https://github.com/thanakorn-official) · [ซอร์สโค้ด](https://github.com/thanakorn-official/KeepTang)
 
 </div>
