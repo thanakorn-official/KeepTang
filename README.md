@@ -1,47 +1,52 @@
 <div align="center">
 
-<img src="./assets/branding/readme_banner.svg" width="100%" alt="KeepTang — บันทึกรายรับรายจ่าย" />
+<img src="./assets/branding/readme_banner.svg" width="100%" alt="KeepTang — แอปบันทึกรายรับรายจ่าย" />
 
-<br />
+# KeepTang · เก็บตัง
 
 **บันทึกง่าย เห็นภาพเงินชัดขึ้น**
 
-แอปจัดการรายรับรายจ่ายส่วนตัว สำหรับบันทึกรายการ ดูยอดเงิน และทบทวนการใช้จ่ายในที่เดียว
+รายรับ รายจ่าย และทุกความเคลื่อนไหวของเงิน อยู่ในแอปเดียว
 
 <p>
-  <img src="https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&amp;logo=flutter&amp;logoColor=white" alt="Flutter" />
-  <img src="https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&amp;logo=dart&amp;logoColor=white" alt="Dart" />
-  <img src="https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&amp;logo=firebase&amp;logoColor=black" alt="Firebase" />
-  <img src="https://img.shields.io/badge/version-1.4.5-0A665E?style=for-the-badge" alt="Version 1.4.5" />
+  <img src="https://img.shields.io/badge/Android-3DDC84?style=flat-square&amp;logo=android&amp;logoColor=white" alt="Android" />
+  <img src="https://img.shields.io/badge/ภาษา-ไทย%20%2F%20English-0A665E?style=flat-square" alt="ภาษาไทยและอังกฤษ" />
+  <img src="https://img.shields.io/badge/เวอร์ชัน-1.4.5-0A665E?style=flat-square" alt="เวอร์ชัน 1.4.5" />
 </p>
 
-[ความสามารถ](#features) · [ภาพหน้าจอ](#screenshots) · [เริ่มต้นใช้งาน](#getting-started) · [เทคโนโลยี](#stack)
+[เกี่ยวกับแอป](#about) · [ฟีเจอร์เด่น](#highlights) · [ภาพตัวอย่าง](#screenshots) · [ข้อมูลแอป](#app-info)
 
 </div>
 
 ---
 
-<a id="features"></a>
-## ความสามารถ
+<a id="about"></a>
+## เกี่ยวกับแอป
 
-| | ทำอะไรได้ | รายละเอียด |
-|:---:|---|---|
-| 📊 | **ดูภาพรวมการเงิน** | ดูรายรับ รายจ่าย ยอดคงเหลือ และกราฟแยกตามหมวดหมู่ |
-| ✍️ | **บันทึกรายการ** | เพิ่ม แก้ไข ลบ และเรียกคืนรายการ พร้อมกำหนดวันและเวลา |
-| 🧾 | **อ่านข้อมูลจากสลิป** | ดึงข้อมูลจากภาพสลิป แล้วตรวจแก้ก่อนบันทึก |
-| 🔎 | **ค้นหาและกรอง** | ค้นหารายการตามหมวดหมู่ ช่องทางชำระเงิน และช่วงเวลา |
-| ☑️ | **แก้ไขหลายรายการ** | เลือกหลายรายการเพื่อปรับวันเวลา หมวดหมู่ หรือช่องทางชำระเงินพร้อมกัน |
-| 💳 | **จัดการบัญชี** | แยกยอดตามบัญชีและบันทึกการโอนเงินระหว่างบัญชี |
-| 🎨 | **ปรับแต่งได้** | ตั้งหมวดหมู่ ไอคอน ช่องทางชำระเงิน ภาษา และธีม |
-| 📤 | **ส่งออกข้อมูล** | ส่งออกรายการและรายงานเป็น CSV หรือ PDF |
+KeepTang ช่วยให้การดูแลเงินในแต่ละวันเป็นเรื่องง่าย บันทึกรายรับรายจ่ายได้ทันที แยกเงินตามบัญชี ค้นหารายการย้อนหลัง และดูกราฟสรุปเพื่อเข้าใจว่าเงินของคุณไปไหน
+
+มีสลิปอยู่ในเครื่อง? เลือกรูปภาพให้แอปช่วยอ่านข้อความ ตรวจสอบรายละเอียดก่อนบันทึก แล้วกลับมาดูรายการทั้งหมดได้ในที่เดียว
+
+<a id="highlights"></a>
+## ฟีเจอร์เด่น
+
+| | สิ่งที่ทำได้ |
+|:---:|---|
+| 📊 | **ภาพรวมชัดเจน** — ดูรายรับ รายจ่าย ยอดคงเหลือ และกราฟตามหมวดหมู่ |
+| ✍️ | **บันทึกได้ตามจริง** — เพิ่ม แก้ไข ลบ และเรียกคืนรายการ พร้อมกำหนดวันเวลา |
+| 🧾 | **เพิ่มรายการจากสลิป** — ช่วยอ่านข้อมูลจากภาพและให้ตรวจแก้ก่อนบันทึก |
+| 🔎 | **ค้นหาได้เร็ว** — กรองตามหมวดหมู่ ช่องทางชำระเงิน และช่วงเวลา |
+| 💳 | **ดูเงินแยกบัญชี** — ติดตามยอดและบันทึกการโอนระหว่างบัญชี |
+| 🎨 | **ปรับให้เข้ากับคุณ** — เลือกหมวดหมู่ ไอคอน ธีมสว่างหรือมืด และภาษาไทยหรืออังกฤษ |
+| 📤 | **นำข้อมูลออกได้** — ส่งออกรายการและรายงานเป็น CSV หรือ PDF |
 
 <a id="screenshots"></a>
-## ภาพหน้าจอ
+## ภาพตัวอย่าง
 
 <div align="center">
 <table>
   <tr>
-    <td align="center"><a href="./screenshot/Dashboard.png"><img src="./screenshot/Dashboard.png" width="250" alt="หน้า Dashboard" /></a><br /><strong>ภาพรวมการเงิน</strong></td>
+    <td align="center"><a href="./screenshot/Dashboard.png"><img src="./screenshot/Dashboard.png" width="250" alt="หน้าแสดงภาพรวมการเงิน" /></a><br /><strong>ภาพรวมการเงิน</strong></td>
     <td align="center"><a href="./screenshot/AddTransaction.png"><img src="./screenshot/AddTransaction.png" width="250" alt="หน้าเพิ่มรายการ" /></a><br /><strong>เพิ่มรายการ</strong></td>
   </tr>
   <tr>
@@ -51,50 +56,24 @@
 </table>
 </div>
 
-<a id="getting-started"></a>
-## เริ่มต้นใช้งาน
+<a id="app-info"></a>
+## ข้อมูลแอป
 
-ติดตั้ง [Flutter SDK](https://docs.flutter.dev/get-started/install) และ Android SDK จากนั้นรันคำสั่งในโฟลเดอร์โปรเจกต์:
+| รายการ | รายละเอียด |
+|---|---|
+| เวอร์ชัน | 1.4.5 |
+| แพลตฟอร์ม | Android |
+| ภาษา | ไทย, English |
+| ผู้พัฒนา | [thanakorn-official](https://github.com/thanakorn-official) |
 
-```sh
-flutter pub get
-flutter run
-```
+## ข้อมูลและความเป็นส่วนตัว
 
-สร้าง APK สำหรับ Android:
-
-```sh
-flutter clean
-flutter pub get
-flutter build apk --release
-```
-
-ไฟล์ที่ได้อยู่ที่ `build/app/outputs/flutter-apk/app-release.apk` เวอร์ชันของแอปกำหนดไว้ใน [`pubspec.yaml`](./pubspec.yaml)
-
-### ปรับไอคอนและโลโก้
-
-ต้นฉบับไอคอนคือ [`app_icon.svg`](./assets/branding/app_icon.svg) (พื้นหลังโปร่งใส วงแดง เขียว ฟ้า) ส่วน [`logo.svg`](./assets/branding/logo.svg) เป็นโลโก้สีขาวที่ใช้ภายในแอปและหน้าเปิดแอป เมื่อแก้ต้นฉบับแล้วให้สร้างไฟล์ PNG และไอคอนแพลตฟอร์มใหม่:
-
-```sh
-python -m pip install -r tool/branding-requirements.txt
-python tool/generate_branding.py
-dart run flutter_launcher_icons
-dart run flutter_native_splash:create
-```
-
-<a id="stack"></a>
-## เทคโนโลยี
-
-**Flutter + Dart** สำหรับแอป · **Cloud Firestore** สำหรับข้อมูล · **Google ML Kit** สำหรับอ่านข้อความจากสลิป · **FL Chart** สำหรับกราฟ · **SharedPreferences** สำหรับการตั้งค่าบนอุปกรณ์
-
-## ข้อควรทราบเกี่ยวกับข้อมูล
-
-โหมด Guest ใช้ ID ของอุปกรณ์และยังไม่มีระบบบัญชีสำหรับกู้คืนข้อมูลข้ามเครื่อง กฎ [Firestore Security Rules](./firestore.rules) ในโปรเจกต์ยังอนุญาตการอ่านและเขียนข้อมูลในคอลเลกชัน Guest โดยไม่ยืนยันตัวตน **โปรเจกต์นี้เหมาะสำหรับการทดลองหรือสาธิต และยังไม่ควรใช้เก็บข้อมูลการเงินจริง** จนกว่าจะเพิ่มระบบยืนยันตัวตนและปรับกฎความปลอดภัย
+โหมด Guest ใช้ ID ของอุปกรณ์และยังไม่มีบัญชีสำหรับกู้คืนข้อมูลข้ามเครื่อง กฎ [Firestore Security Rules](./firestore.rules) ในโปรเจกต์ยังอนุญาตให้อ่านและเขียนข้อมูล Guest โดยไม่ยืนยันตัวตน **แอปเวอร์ชันนี้เหมาะสำหรับการทดลองหรือสาธิต และยังไม่ควรใช้เก็บข้อมูลการเงินจริง** จนกว่าจะเพิ่มระบบยืนยันตัวตนและปรับกฎความปลอดภัย
 
 ---
 
 <div align="center">
 
-พัฒนาโดย [thanakorn-official](https://github.com/thanakorn-official) · [ซอร์สโค้ด](https://github.com/thanakorn-official/KeepTang)
+[ดูซอร์สโค้ด KeepTang](https://github.com/thanakorn-official/KeepTang)
 
 </div>

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../main.dart';
 import '../services/guest_service.dart';
@@ -16,122 +18,163 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
-  bool _showLoading = false;
+class _SplashScreenState extends State<SplashScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _ringController;
+  late final AnimationController _finishController;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    _startSplash();
+    _ringController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+    _finishController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 720),
+    );
+    _prepareAndNavigate();
   }
 
-  Future<void> _startSplash() async {
-    await Future<void>.delayed(const Duration(milliseconds: 1100));
-    if (!mounted) return;
-    setState(() => _showLoading = true);
+  Future<void> _prepareAndNavigate() async {
+    try {
+      await Future.wait<void>([
+        Future<void>.delayed(const Duration(milliseconds: 1400)),
+        _prepareGuest(),
+      ]);
+      if (!mounted) return;
 
-    await Future<void>.delayed(const Duration(milliseconds: 1400));
+      await _finishController.forward();
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder<void>(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              GuestService.hasUsername
+                  ? const DashboardScreen()
+                  : const GuestSetupScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+              FadeTransition(opacity: animation, child: child),
+          transitionDuration: const Duration(milliseconds: 280),
+        ),
+      );
+    } catch (error, stackTrace) {
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'KeepTang splash screen',
+      ));
+      if (mounted) setState(() => _hasError = true);
+    }
+  }
+
+  Future<void> _prepareGuest() async {
     await GuestService.ensureGuest();
     await GuestService.restoreCustomSettings();
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => GuestService.hasUsername
-            ? const DashboardScreen()
-            : const GuestSetupScreen(),
-      ),
-    );
+  }
+
+  @override
+  void dispose() {
+    _ringController.dispose();
+    _finishController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final logoSize = math.min(MediaQuery.sizeOf(context).width * 0.6, 240.0);
+
     return ValueListenableBuilder<String>(
       valueListenable: languageNotifier,
-      builder: (context, lang, child) {
-        const logoColor = Colors.white;
-
-        return Scaffold(
-          backgroundColor: AppLogo.backgroundColor,
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 450),
-                  switchInCurve: Curves.easeOutBack,
-                  switchOutCurve: Curves.easeIn,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(scale: animation, child: child),
-                  ),
-                  child: _showLoading
-                      ? SizedBox(
-                          key: const ValueKey('logo-loading'),
-                          width: 184,
-                          height: 184,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              SizedBox(
-                                width: 144,
-                                height: 144,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 5,
-                                  color: logoColor,
-                                  backgroundColor:
-                                      logoColor.withValues(alpha: 0.16),
-                                ),
-                              ),
-                              AppLogo(
-                                size: 104,
-                                semanticLabel: T.get('appTitle'),
-                              ),
-                            ],
-                          ),
-                        )
-                      : SizedBox(
-                          key: const ValueKey('app-logo'),
-                          width: 184,
-                          height: 184,
-                          child: AppLogo(
-                            size: 184,
-                            semanticLabel: T.get('appTitle'),
-                          ),
-                        ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  T.get('appTitle'),
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    color: logoColor,
-                  ),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  child: _showLoading
-                      ? Padding(
-                          key: const ValueKey('loading-text'),
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            T.get('loading'),
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: logoColor.withValues(alpha: 0.72),
+      builder: (context, language, child) => Scaffold(
+        backgroundColor: AppLogo.backgroundColor,
+        body: Center(
+          child: AnimatedBuilder(
+            animation: _finishController,
+            builder: (context, child) {
+              final progress = _finishController.value;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox.square(
+                    dimension: logoSize,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.none,
+                      children: [
+                        Opacity(
+                          opacity: 1 - Curves.easeIn.transform(progress),
+                          child: RotationTransition(
+                            turns: _ringController,
+                            child: SvgPicture.asset(
+                              'assets/branding/loading_rings.svg',
+                              width: logoSize,
+                              height: logoSize,
+                              excludeFromSemantics: true,
                             ),
                           ),
-                        )
-                      : const SizedBox.shrink(
-                          key: ValueKey('no-loading-text'),
                         ),
-                ),
-              ],
-            ),
+                        Transform.scale(
+                          scale:
+                              1 + 2.2 * Curves.easeInCubic.transform(progress),
+                          child: SvgPicture.asset(
+                            'assets/branding/loading_receipt.svg',
+                            width: logoSize,
+                            height: logoSize,
+                            semanticsLabel: T.get('appTitle'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Opacity(
+                    opacity: 1 - progress,
+                    child: Column(
+                      children: [
+                        Text(
+                          T.get('appTitle'),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_hasError) ...[
+                          Text(
+                            T.get('loadingFailed'),
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() => _hasError = false);
+                              _prepareAndNavigate();
+                            },
+                            child: Text(
+                              T.get('retry'),
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                          ),
+                        ] else
+                          Text(
+                            T.get('loading'),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.white70,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
