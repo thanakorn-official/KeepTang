@@ -209,6 +209,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       data['isExpense'] == true || data['isExpense'] == 1;
                   final title = data['title']?.toString() ?? '';
                   final category = data['category']?.toString() ?? _unspecified;
+                  final categoryColor = _getCategoryColor(category);
+                  final categoryIcon = category == 'transfer'
+                      ? Icons.swap_horiz
+                      : _getCategoryIcon(category);
                   final payment =
                       data['paymentMethod']?.toString() ?? _unspecified;
 
@@ -221,11 +225,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         children: [
                           CircleAvatar(
                             backgroundColor:
-                                (isExpense ? Colors.red : Colors.green)
-                                    .withValues(alpha: .12),
+                                categoryColor.withValues(alpha: .14),
                             child: Icon(
-                                isExpense ? Icons.south_west : Icons.north_east,
-                                color: isExpense ? Colors.red : Colors.green),
+                              categoryIcon,
+                              color: categoryColor,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -754,6 +758,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     controller: controller,
                     decoration: InputDecoration(
                       labelText: T.get('paymentName'),
+                      hintText: T.get('accountNameHint'),
                       border: const OutlineInputBorder(),
                     ),
                   ),

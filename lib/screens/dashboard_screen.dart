@@ -17,11 +17,14 @@ import '../services/guest_service.dart';
 import '../services/slip_inbox_service.dart';
 import '../services/slip_ocr_parser.dart';
 import '../utils/l10n.dart';
+import '../widgets/app_logo.dart';
 import '../widgets/skeleton_loader.dart';
 import 'settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({super.key, this.initialSnapshot});
+
+  final QuerySnapshot? initialSnapshot;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -30,9 +33,19 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
   static const _sortOrderPreferenceKey = 'dashboard_sort_order';
+  static const _groupTypePreferenceKey = 'dashboard_group_type';
   static const _sortOrderOptions = ['newest', 'oldest', 'highest', 'lowest'];
+  static const _groupTypeOptions = [
+    'daily',
+    'weekly',
+    'monthly',
+    'yearly',
+    'none',
+  ];
 
   final ScrollController _dashboardScrollController = ScrollController();
+  Timer? _floatingActionsTimer;
+  bool _scrollChromeHidden = false;
   final TextEditingController _searchController = TextEditingController();
   late final Stream<QuerySnapshot> _transactionsStream;
   QuerySnapshot? _cachedSnapshot;
@@ -145,11 +158,17 @@ class _DashboardScreenState extends State<DashboardScreen>
   ];
 
   final Set<String> _pendingDeleteIds = {};
+  final Set<String> _committedDeleteIds = {};
+  final Set<String> _failedDeleteIds = {};
+  final Set<String> _finalizingDeleteIds = {};
+  TransactionModel? _undoTransaction;
+  Timer? _undoTimer;
   final Set<String> _selectedTransactionIds = {};
   List<SlipInboxDraft> _slipDrafts = [];
   bool _isScanningNewSlips = false;
   bool _isSlipInboxOpen = false;
   bool _slipScanDeferred = false;
+  DateTime? _automaticSlipScanRetryAt;
 
   CollectionReference get _transactionsCollection => FirebaseFirestore.instance
       .collection('guests')
@@ -160,6 +179,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   String _sortOrder = 'newest';
   String _searchQuery = '';
   bool _sortOrderWasChanged = false;
+  bool _groupTypeWasChanged = false;
 
   Set<String> _selectedTypes = {'income', 'expense', 'transfer'};
   Set<String> _selectedCategories = {};
@@ -171,6 +191,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _dashboardScrollController.addListener(_handleDashboardScroll);
     _transactionsStream =
         _transactionsCollection.orderBy('date', descending: true).snapshots();
     _loadCustomSettings();
@@ -193,9 +214,23 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _floatingActionsTimer?.cancel();
+    _undoTimer?.cancel();
+    _dashboardScrollController.removeListener(_handleDashboardScroll);
     _dashboardScrollController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _handleDashboardScroll() {
+    if (!_scrollChromeHidden) {
+      setState(() => _scrollChromeHidden = true);
+    }
+    _floatingActionsTimer?.cancel();
+    _floatingActionsTimer = Timer(const Duration(milliseconds: 600), () {
+      if (!mounted || !_scrollChromeHidden) return;
+      setState(() => _scrollChromeHidden = false);
+    });
   }
 
   Future<void> _initializeSlipInbox() async {
@@ -219,7 +254,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       await _scanForNewSlips();
     } catch (error) {
       debugPrint('Could not initialize slip inbox: $error');
-      _showSlipInboxError();
     }
   }
 
@@ -236,8 +270,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _scanForNewSlips() async {
+    final retryAt = _automaticSlipScanRetryAt;
     if (_isScanningNewSlips ||
         !mounted ||
+        (retryAt != null && DateTime.now().isBefore(retryAt)) ||
         (defaultTargetPlatform != TargetPlatform.android &&
             defaultTargetPlatform != TargetPlatform.iOS)) {
       return;
@@ -246,17 +282,57 @@ class _DashboardScreenState extends State<DashboardScreen>
     _isScanningNewSlips = true;
     var addedCount = 0;
     final scanStartedAt = DateTime.now();
+    SharedPreferences? scanPreferences;
     try {
       final prefs = await SharedPreferences.getInstance();
+      scanPreferences = prefs;
+      final retryValue =
+          prefs.getString(SlipInboxService.autoScanRetryAfterKey);
+      final savedRetryAt =
+          retryValue == null ? null : DateTime.tryParse(retryValue);
+      if (savedRetryAt != null && DateTime.now().isBefore(savedRetryAt)) {
+        _automaticSlipScanRetryAt = savedRetryAt;
+        return;
+      }
+      if (retryValue != null) {
+        await prefs.remove(SlipInboxService.autoScanRetryAfterKey);
+      }
+
       final lastScanValue = prefs.getString(SlipInboxService.lastScanAtKey);
       if (lastScanValue == null) {
         await _saveSlipScanTime();
         return;
       }
-      final lastScan = DateTime.parse(lastScanValue);
-      final permission = await PhotoManager.requestPermissionExtend();
+      final parsedLastScan = DateTime.tryParse(lastScanValue);
+      final lastScan =
+          parsedLastScan ?? scanStartedAt.subtract(const Duration(days: 30));
+      if (parsedLastScan == null) {
+        debugPrint('Invalid slip scan timestamp; scanning the last 30 days.');
+      }
+
+      const permissionRequest = PermissionRequestOption(
+        androidPermission: AndroidPermission(
+          type: RequestType.image,
+          mediaLocation: false,
+        ),
+      );
+      var permission = await PhotoManager.getPermissionState(
+        requestOption: permissionRequest,
+      );
+      if (!permission.hasAccess &&
+          permission == PermissionState.notDetermined &&
+          prefs.getBool(SlipInboxService.autoScanPermissionRequestedKey) !=
+              true) {
+        await prefs.setBool(
+          SlipInboxService.autoScanPermissionRequestedKey,
+          true,
+        );
+        permission = await PhotoManager.requestPermissionExtend(
+          requestOption: permissionRequest,
+        );
+        if (!permission.hasAccess) _showPhotoPermissionError();
+      }
       if (!permission.hasAccess) {
-        _showPhotoPermissionError();
         return;
       }
 
@@ -339,12 +415,24 @@ class _DashboardScreenState extends State<DashboardScreen>
         SlipInboxService.lastScanAtKey,
         scanStartedAt.toIso8601String(),
       );
+      await prefs.remove(SlipInboxService.autoScanRetryAfterKey);
+      _automaticSlipScanRetryAt = null;
       if (addedCount > 0 && mounted && !_isSlipInboxOpen) {
         await _showSlipInboxSheet();
       }
     } catch (error) {
       debugPrint('Could not scan new slips: $error');
-      _showSlipInboxError();
+      final retryAt = DateTime.now().add(const Duration(minutes: 5));
+      _automaticSlipScanRetryAt = retryAt;
+      try {
+        final prefs = scanPreferences ?? await SharedPreferences.getInstance();
+        await prefs.setString(
+          SlipInboxService.autoScanRetryAfterKey,
+          retryAt.toIso8601String(),
+        );
+      } catch (saveError) {
+        debugPrint('Could not schedule slip scan retry: $saveError');
+      }
     } finally {
       _isScanningNewSlips = false;
       if (_slipScanDeferred && mounted && !_isSlipInboxOpen) {
@@ -597,12 +685,28 @@ class _DashboardScreenState extends State<DashboardScreen>
                               decoration: InputDecoration(
                                 labelText: T.get('categoryLabel'),
                               ),
-                              items: _categoryIcons.keys
-                                  .map((item) => DropdownMenuItem(
-                                        value: item,
-                                        child: Text(item),
-                                      ))
-                                  .toList(),
+                              items: _categoryIcons.keys.map((item) {
+                                return DropdownMenuItem(
+                                  value: item,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _iconOf(item),
+                                        color: _colorOf(item),
+                                        size: 19,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          item,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
                               onChanged: (value) {
                                 if (value != null) {
                                   setDialogState(() => category = value);
@@ -615,12 +719,28 @@ class _DashboardScreenState extends State<DashboardScreen>
                               decoration: InputDecoration(
                                 labelText: T.get('paymentMethodLabel'),
                               ),
-                              items: _paymentIcons.keys
-                                  .map((item) => DropdownMenuItem(
-                                        value: item,
-                                        child: Text(item),
-                                      ))
-                                  .toList(),
+                              items: _paymentIcons.keys.map((item) {
+                                return DropdownMenuItem(
+                                  value: item,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _paymentIconOf(item),
+                                        color: _paymentColorOf(item),
+                                        size: 19,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          item,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
                               onChanged: (value) {
                                 if (value != null) {
                                   setDialogState(() => paymentMethod = value);
@@ -1141,6 +1261,27 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   IconData _getDefaultPaymentIcon(String pay) {
+    final normalized = pay.toLowerCase();
+    if (pay == 'cash' || pay.contains('เงินสด')) {
+      return Icons.payments_outlined;
+    }
+    if (pay == 'promptpay' || pay.contains('พร้อมเพย์')) {
+      return Icons.qr_code_scanner;
+    }
+    if (pay == 'truemoney' || normalized.contains('truemoney')) {
+      return Icons.account_balance_wallet;
+    }
+    if (pay == 'paotang' || pay.contains('เป๋าตัง')) {
+      return Icons.wallet;
+    }
+    if (pay.contains('ธนาคาร') ||
+        pay.contains('กสิกร') ||
+        normalized.contains('bank') ||
+        normalized.contains('kbank') ||
+        normalized.contains('kasikorn')) {
+      return Icons.account_balance;
+    }
+
     switch (pay) {
       case 'cash':
         return Icons.payments_outlined;
@@ -1153,11 +1294,23 @@ class _DashboardScreenState extends State<DashboardScreen>
       case 'ไม่ระบุ':
         return Icons.account_balance_wallet_outlined;
       default:
-        return Icons.payment;
+        return Icons.account_balance_wallet_outlined;
     }
   }
 
   Color _getDefaultPaymentColor(String pay) {
+    final normalized = pay.toLowerCase();
+    if (pay.contains('เงินสด')) return Colors.green;
+    if (pay.contains('พร้อมเพย์')) return Colors.blue;
+    if (pay.contains('กสิกร') ||
+        normalized.contains('kbank') ||
+        normalized.contains('kasikorn')) {
+      return Colors.green;
+    }
+    if (pay.contains('ธนาคาร') || normalized.contains('bank')) {
+      return Colors.blueGrey;
+    }
+
     switch (pay) {
       case 'cash':
         return Colors.green;
@@ -1178,9 +1331,18 @@ class _DashboardScreenState extends State<DashboardScreen>
     final prefs = await SharedPreferences.getInstance();
 
     final savedSortOrder = prefs.getString(_sortOrderPreferenceKey);
-    if (!_sortOrderWasChanged && _sortOrderOptions.contains(savedSortOrder)) {
+    final savedGroupType = prefs.getString(_groupTypePreferenceKey);
+    if ((!_sortOrderWasChanged && _sortOrderOptions.contains(savedSortOrder)) ||
+        (!_groupTypeWasChanged && _groupTypeOptions.contains(savedGroupType))) {
       setState(() {
-        _sortOrder = savedSortOrder!;
+        if (!_sortOrderWasChanged &&
+            _sortOrderOptions.contains(savedSortOrder)) {
+          _sortOrder = savedSortOrder!;
+        }
+        if (!_groupTypeWasChanged &&
+            _groupTypeOptions.contains(savedGroupType)) {
+          _groupType = savedGroupType!;
+        }
       });
     }
 
@@ -1274,6 +1436,18 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_sortOrderPreferenceKey, value);
+  }
+
+  Future<void> _updateGroupType(String? value) async {
+    if (value == null || !_groupTypeOptions.contains(value)) return;
+
+    setState(() {
+      _groupType = value;
+      _groupTypeWasChanged = true;
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_groupTypePreferenceKey, value);
   }
 
   Color _colorOf(String category) {
@@ -1460,6 +1634,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     controller: controller,
                     decoration: InputDecoration(
                       labelText: T.get('paymentName'),
+                      hintText: T.get('accountNameHint'),
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -2302,9 +2477,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         children: [
           _buildDropdown(
             _groupType,
-            ['daily', 'weekly', 'monthly', 'yearly', 'none'],
+            _groupTypeOptions,
             Icons.date_range,
-            (value) => setState(() => _groupType = value!),
+            _updateGroupType,
             isActive: _groupType != 'monthly',
           ),
           _buildDropdown(
@@ -2636,50 +2811,96 @@ class _DashboardScreenState extends State<DashboardScreen>
     final colors = Theme.of(context).colorScheme;
     return Material(
       color: colors.surface,
-      elevation: 4,
+      elevation: 3,
       child: Container(
         margin: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: colors.primaryContainer,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(children: [
-          CircleAvatar(
-            radius: 19,
-            backgroundColor: colors.primary.withValues(alpha: .12),
-            child:
-                Icon(Icons.checklist_rounded, color: colors.primary, size: 21),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: colors.primary.withValues(alpha: .12),
           ),
-          const SizedBox(width: 10),
-          Expanded(
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 19,
+              backgroundColor: colors.primary.withValues(alpha: .12),
+              child: Icon(
+                Icons.checklist_rounded,
+                color: colors.primary,
+                size: 21,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
               child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                  '${_selectedTransactionIds.length} ${T.get('selectedTransactions')}',
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
-              Text('${T.get('selectedNet')}: $selectedNetLabel',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall),
-            ],
-          )),
-          IconButton(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_selectedTransactionIds.length} ${T.get('selectedTransactions')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: colors.onPrimaryContainer,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  Text(
+                    '${T.get('selectedNet')}: $selectedNetLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.onPrimaryContainer.withValues(
+                            alpha: .78,
+                          ),
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              style: IconButton.styleFrom(
+                foregroundColor: colors.primary,
+                backgroundColor: colors.surface.withValues(alpha: .75),
+                minimumSize: const Size.square(40),
+                maximumSize: const Size.square(40),
+                padding: EdgeInsets.zero,
+              ),
               tooltip: T.get('editSelected'),
               onPressed: _showBulkEditSheet,
-              icon: const Icon(Icons.edit_note_rounded)),
-          IconButton(
+              icon: const Icon(Icons.edit_note_rounded),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              style: IconButton.styleFrom(
+                foregroundColor: colors.error,
+                backgroundColor: colors.error.withValues(alpha: .12),
+                minimumSize: const Size.square(40),
+                maximumSize: const Size.square(40),
+                padding: EdgeInsets.zero,
+              ),
               tooltip: T.get('delete'),
               onPressed: _deleteSelectedTransactions,
-              color: colors.error,
-              icon: const Icon(Icons.delete_sweep_outlined)),
-          IconButton(
+              icon: const Icon(Icons.delete_sweep_outlined),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              style: IconButton.styleFrom(
+                foregroundColor: colors.onSurfaceVariant,
+                backgroundColor: colors.surface.withValues(alpha: .75),
+                minimumSize: const Size.square(40),
+                maximumSize: const Size.square(40),
+                padding: EdgeInsets.zero,
+              ),
               tooltip: T.get('cancel'),
               onPressed: _clearTransactionSelection,
-              icon: const Icon(Icons.close_rounded)),
-        ]),
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3570,69 +3791,72 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     return Column(
       children: [
-        SizedBox(
-          height: 220,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              PieChart(
-                PieChartData(
-                  sectionsSpace: 2,
-                  centerSpaceRadius: 54,
-                  sections: sections,
-                  pieTouchData: PieTouchData(
-                    touchCallback: (event, response) {
-                      if (event is! FlTapUpEvent) return;
-                      final index =
-                          response?.touchedSection?.touchedSectionIndex;
-                      if (index == null ||
-                          index < 0 ||
-                          index >= categoryTotals.length) {
-                        return;
-                      }
-                      final category = categoryTotals.keys.elementAt(index);
-                      final focusedCategoryAtPointerDown =
-                          _focusedCategoryAtPointerDown;
-                      _focusedCategoryAtPointerDown = null;
-                      setState(() {
-                        _selectedChartCategory =
-                            focusedCategoryAtPointerDown == category
-                                ? null
-                                : category;
-                      });
-                    },
+        Hero(
+          tag: 'keepTangDashboardPieChart',
+          child: SizedBox(
+            height: 220,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                PieChart(
+                  PieChartData(
+                    sectionsSpace: 2,
+                    centerSpaceRadius: 54,
+                    sections: sections,
+                    pieTouchData: PieTouchData(
+                      touchCallback: (event, response) {
+                        if (event is! FlTapUpEvent) return;
+                        final index =
+                            response?.touchedSection?.touchedSectionIndex;
+                        if (index == null ||
+                            index < 0 ||
+                            index >= categoryTotals.length) {
+                          return;
+                        }
+                        final category = categoryTotals.keys.elementAt(index);
+                        final focusedCategoryAtPointerDown =
+                            _focusedCategoryAtPointerDown;
+                        _focusedCategoryAtPointerDown = null;
+                        setState(() {
+                          _selectedChartCategory =
+                              focusedCategoryAtPointerDown == category
+                                  ? null
+                                  : category;
+                        });
+                      },
+                    ),
                   ),
+                  duration: const Duration(milliseconds: 360),
+                  curve: Curves.easeInOutCubic,
                 ),
-                duration: const Duration(milliseconds: 360),
-                curve: Curves.easeInOutCubic,
-              ),
-              IgnorePointer(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(
-                      scale: Tween<double>(begin: 0.92, end: 1).animate(
-                        CurvedAnimation(
-                          parent: animation,
-                          curve: Curves.easeOutCubic,
+                IgnorePointer(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(
+                        scale: Tween<double>(begin: 0.92, end: 1).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          ),
                         ),
+                        child: child,
                       ),
-                      child: child,
                     ),
-                  ),
-                  child: SizedBox(
-                    key: ValueKey<String>(
-                      _selectedTransactionIds.isNotEmpty
-                          ? 'selected-net'
-                          : 'category-${selectedCategory ?? 'all'}',
+                    child: SizedBox(
+                      key: ValueKey<String>(
+                        _selectedTransactionIds.isNotEmpty
+                            ? 'selected-net'
+                            : 'category-${selectedCategory ?? 'all'}',
+                      ),
+                      width: 104,
+                      child: centerContent,
                     ),
-                    width: 104,
-                    child: centerContent,
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -3651,47 +3875,150 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  void _handleDelete(BuildContext context, TransactionModel tx) {
-    setState(() => _pendingDeleteIds.add(tx.id));
-    bool isUndone = false;
+  void _handleDelete(TransactionModel tx) {
+    final previousUndo = _undoTransaction;
+    _undoTimer?.cancel();
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
+    setState(() {
+      _pendingDeleteIds.add(tx.id);
+      _undoTransaction = tx;
+    });
 
-    late final Timer autoDismissTimer;
-    final snackBar = messenger.showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 5),
-        margin: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
-        backgroundColor: Colors.black.withValues(alpha: 0.85),
-        content: Text(
-          '${T.get('deleted')} ${tx.title}',
-          style: const TextStyle(color: Colors.white),
-        ),
-        action: SnackBarAction(
-          label: T.get('undo'),
-          textColor: Colors.amberAccent,
-          onPressed: () {
-            isUndone = true;
-            autoDismissTimer.cancel();
-            setState(() => _pendingDeleteIds.remove(tx.id));
-          },
+    if (previousUndo != null) {
+      unawaited(_finalizePendingDeletion(previousUndo));
+    }
+
+    _undoTimer = Timer(const Duration(seconds: 5), () {
+      if (_undoTransaction?.id == tx.id) {
+        unawaited(_finalizePendingDeletion(tx));
+      }
+    });
+  }
+
+  void _undoPendingDeletion() {
+    final tx = _undoTransaction;
+    if (tx == null) return;
+
+    _undoTimer?.cancel();
+    _undoTimer = null;
+    setState(() {
+      _undoTransaction = null;
+      _pendingDeleteIds.remove(tx.id);
+      _cachedPendingDeleteKey = null;
+    });
+  }
+
+  Future<void> _finalizePendingDeletion(TransactionModel tx) async {
+    if (!_pendingDeleteIds.contains(tx.id) ||
+        !_finalizingDeleteIds.add(tx.id)) {
+      return;
+    }
+
+    if (_undoTransaction?.id == tx.id) {
+      _undoTimer?.cancel();
+      _undoTimer = null;
+      if (mounted) {
+        setState(() => _undoTransaction = null);
+      }
+    }
+
+    try {
+      await _transactionsCollection
+          .doc(tx.id)
+          .update({'deletedAt': FieldValue.serverTimestamp()});
+      if (!mounted) return;
+
+      setState(() {
+        _committedDeleteIds.add(tx.id);
+        _failedDeleteIds.remove(tx.id);
+        _reconcilePendingDeletes(_cachedSnapshot);
+        _cachedPendingDeleteKey = null;
+      });
+    } catch (error) {
+      debugPrint('Unable to delete transaction ${tx.id}: $error');
+      if (!mounted) return;
+
+      setState(() {
+        _committedDeleteIds.remove(tx.id);
+        _failedDeleteIds.add(tx.id);
+        _reconcilePendingDeletes(_cachedSnapshot);
+        _cachedPendingDeleteKey = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(T.get('saveError'))),
+      );
+    } finally {
+      _finalizingDeleteIds.remove(tx.id);
+    }
+  }
+
+  void _reconcilePendingDeletes(QuerySnapshot? snapshot) {
+    if (snapshot == null) return;
+
+    final docsById = {for (final doc in snapshot.docs) doc.id: doc};
+    final releasedIds = <String>{};
+
+    for (final id in _committedDeleteIds) {
+      final doc = docsById[id];
+      final isDeleted = doc == null ||
+          (doc.data() as Map<String, dynamic>)['deletedAt'] != null;
+      if (isDeleted) releasedIds.add(id);
+    }
+
+    for (final id in _failedDeleteIds) {
+      final doc = docsById[id];
+      final isRestored = doc == null ||
+          (doc.data() as Map<String, dynamic>)['deletedAt'] == null;
+      if (isRestored) releasedIds.add(id);
+    }
+
+    _committedDeleteIds.removeAll(releasedIds);
+    _failedDeleteIds.removeAll(releasedIds);
+    _pendingDeleteIds.removeAll(releasedIds);
+  }
+
+  Widget _buildUndoNotice(TransactionModel tx) {
+    final theme = Theme.of(context);
+    final maxWidth =
+        (MediaQuery.sizeOf(context).width - 32).clamp(0.0, 360.0).toDouble();
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Material(
+        elevation: 6,
+        color: theme.colorScheme.inverseSurface,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.delete_outline,
+                color: theme.colorScheme.onInverseSurface,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${T.get('deleted')} ${tx.title}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: theme.colorScheme.onInverseSurface,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: _undoPendingDeletion,
+                child: Text(T.get('undo')),
+              ),
+            ],
+          ),
         ),
       ),
     );
-    autoDismissTimer = Timer(const Duration(seconds: 5), () {
-      if (!isUndone) snackBar.close();
-    });
-    snackBar.closed.then((reason) {
-      autoDismissTimer.cancel();
-      if (!isUndone && reason != SnackBarClosedReason.action) {
-        _transactionsCollection
-            .doc(tx.id)
-            .update({'deletedAt': FieldValue.serverTimestamp()});
-        _pendingDeleteIds.remove(tx.id);
-      }
-    });
   }
 
   Future<void> _hideTransactionFromDashboard(
@@ -3800,7 +4127,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             ) ??
             false;
       },
-      onDismissed: (_) => _handleDelete(context, tx),
+      onDismissed: (_) => _handleDelete(tx),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onLongPress: () => _toggleTransactionSelection(tx),
@@ -3902,6 +4229,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget _buildContent(
     List<TransactionModel> allTransactions, {
     String? paymentScope,
+    required Widget paymentSelector,
   }) {
     final isSelecting = _selectedTransactionIds.isNotEmpty;
     if (!identical(_cachedAccountSource, allTransactions) ||
@@ -4003,6 +4331,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     return CustomScrollView(
       controller: _dashboardScrollController,
       slivers: [
+        SliverToBoxAdapter(child: paymentSelector),
         if (isSelecting)
           SliverPersistentHeader(
             pinned: true,
@@ -4176,40 +4505,48 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  T.get('currentBalance'),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                ),
-                Text(
-                  currentBalance == null
-                      ? '--'
-                      : NumberFormat.currency(
-                          locale: locale,
-                          symbol: '฿',
-                          decimalDigits: 2,
-                        ).format(currentBalance),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        height: 1.1,
-                      ),
-                ),
-              ],
+            child: AnimatedCrossFade(
+              firstChild: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    T.get('currentBalance'),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                  ),
+                  Text(
+                    currentBalance == null
+                        ? '--'
+                        : NumberFormat.currency(
+                            locale: locale,
+                            symbol: '฿',
+                            decimalDigits: 2,
+                          ).format(currentBalance),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          height: 1.1,
+                        ),
+                  ),
+                ],
+              ),
+              secondChild: const SizedBox.shrink(),
+              crossFadeState: _scrollChromeHidden
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 220),
+              sizeCurve: Curves.easeInOutCubic,
             ),
           ),
         ],
@@ -4332,11 +4669,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                   Expanded(
                     child: StreamBuilder<QuerySnapshot>(
                       stream: _transactionsStream,
+                      initialData: widget.initialSnapshot,
                       builder: (context, snapshot) {
                         final paymentSelector = _buildPaymentPageSelector(
                           _paymentIcons.keys.toList(),
                         );
-                        if (snapshot.hasError) {
+                        if (snapshot.hasError && !snapshot.hasData) {
                           return Column(
                             children: [
                               _buildUserProfileHeader(currentBalance: null),
@@ -4348,22 +4686,32 @@ class _DashboardScreenState extends State<DashboardScreen>
                           );
                         }
                         if (!snapshot.hasData) {
-                          return Column(
-                            children: [
-                              _buildUserProfileHeader(currentBalance: null),
-                              paymentSelector,
-                              Expanded(
-                                child: SkeletonPulse(
-                                  child: _buildDashboardSkeleton(),
+                          return Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SkeletonPulse(
+                                  child: AppLogo(size: 76),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 16),
+                                Text(
+                                  T.get('loading'),
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
                           );
                         }
 
                         final querySnapshot = snapshot.data!;
                         if (!identical(_cachedSnapshot, querySnapshot)) {
                           _cachedSnapshot = querySnapshot;
+                          _reconcilePendingDeletes(querySnapshot);
                           _cachedParsedTransactions = querySnapshot.docs
                               .where((doc) =>
                                   (doc.data()
@@ -4413,14 +4761,28 @@ class _DashboardScreenState extends State<DashboardScreen>
                         );
                         return Column(
                           children: [
-                            _buildUserProfileHeader(
-                              currentBalance: currentBalance,
+                            AnimatedSize(
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeInOutCubic,
+                              alignment: Alignment.topCenter,
+                              child: AnimatedOpacity(
+                                opacity: _scrollChromeHidden ? 0 : 1,
+                                duration: const Duration(milliseconds: 180),
+                                child: _scrollChromeHidden
+                                    ? const SizedBox(
+                                        width: double.infinity,
+                                        height: 0,
+                                      )
+                                    : _buildUserProfileHeader(
+                                        currentBalance: currentBalance,
+                                      ),
+                              ),
                             ),
-                            paymentSelector,
                             Expanded(
                               child: _buildContent(
                                 allTransactions,
                                 paymentScope: paymentScope,
+                                paymentSelector: paymentSelector,
                               ),
                             ),
                           ],
@@ -4431,26 +4793,43 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ],
               ),
             ),
-            floatingActionButton: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                FloatingActionButton(
-                  heroTag: 'addFromSlipFab',
-                  tooltip: T.get('scanSlip'),
-                  onPressed: () => _showAddTransactionSheet(
-                    context,
-                    scanSlipOnOpen: true,
+            floatingActionButton: IgnorePointer(
+              ignoring: _scrollChromeHidden,
+              child: AnimatedSlide(
+                offset:
+                    _scrollChromeHidden ? const Offset(0, 1.3) : Offset.zero,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOutCubic,
+                child: AnimatedOpacity(
+                  opacity: _scrollChromeHidden ? 0 : 1,
+                  duration: const Duration(milliseconds: 180),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      FloatingActionButton(
+                        heroTag: 'addFromSlipFab',
+                        tooltip: T.get('scanSlip'),
+                        onPressed: () => _showAddTransactionSheet(
+                          context,
+                          scanSlipOnOpen: true,
+                        ),
+                        child: const Icon(Icons.document_scanner_outlined),
+                      ),
+                      const SizedBox(height: 12),
+                      FloatingActionButton(
+                        heroTag: 'addTransactionFab',
+                        onPressed: () => _showAddTransactionSheet(context),
+                        child: const Icon(Icons.add),
+                      ),
+                      if (_undoTransaction != null) ...[
+                        const SizedBox(height: 10),
+                        _buildUndoNotice(_undoTransaction!),
+                      ],
+                    ],
                   ),
-                  child: const Icon(Icons.document_scanner_outlined),
                 ),
-                const SizedBox(height: 12),
-                FloatingActionButton(
-                  heroTag: 'addTransactionFab',
-                  onPressed: () => _showAddTransactionSheet(context),
-                  child: const Icon(Icons.add),
-                ),
-              ],
+              ),
             ),
           ),
         );
