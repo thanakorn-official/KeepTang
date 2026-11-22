@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -94,7 +95,11 @@ class SlipInboxService {
   SlipInboxService._();
 
   static const _draftsKey = 'slip_inbox_drafts';
+  static const _corruptDraftsBackupKey = 'slip_inbox_drafts_corrupt_backup';
   static const _processedAssetsKey = 'slip_inbox_processed_assets';
+  static const autoScanPermissionRequestedKey =
+      'slip_auto_scan_permission_requested';
+  static const autoScanRetryAfterKey = 'slip_auto_scan_retry_after';
   static const lastScanAtKey = 'slip_inbox_last_scan_at';
   static final _random = Random.secure();
 
@@ -102,11 +107,57 @@ class SlipInboxService {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_draftsKey);
     if (value == null) return [];
-    final decoded = jsonDecode(value) as List<dynamic>;
-    return decoded
-        .map((item) =>
-            SlipInboxDraft.fromJson(Map<String, dynamic>.from(item as Map)))
-        .toList();
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(value);
+    } catch (error) {
+      debugPrint('Invalid slip inbox data; resetting saved drafts: $error');
+      try {
+        await prefs.setString(_corruptDraftsBackupKey, value);
+        await prefs.setString(_draftsKey, jsonEncode([]));
+      } catch (saveError) {
+        debugPrint('Could not reset invalid slip inbox data: $saveError');
+      }
+      return [];
+    }
+
+    if (decoded is! List) {
+      debugPrint('Slip inbox data is not a list; resetting saved drafts.');
+      try {
+        await prefs.setString(_corruptDraftsBackupKey, value);
+        await prefs.setString(_draftsKey, jsonEncode([]));
+      } catch (error) {
+        debugPrint('Could not reset invalid slip inbox data: $error');
+      }
+      return [];
+    }
+
+    final drafts = <SlipInboxDraft>[];
+    var skippedDrafts = 0;
+    for (final item in decoded) {
+      if (item is! Map) {
+        skippedDrafts++;
+        continue;
+      }
+      try {
+        drafts.add(
+          SlipInboxDraft.fromJson(Map<String, dynamic>.from(item)),
+        );
+      } catch (_) {
+        skippedDrafts++;
+      }
+    }
+
+    if (skippedDrafts > 0) {
+      debugPrint('Skipped $skippedDrafts invalid slip inbox draft(s).');
+      try {
+        await saveDrafts(drafts);
+      } catch (error) {
+        debugPrint('Could not save repaired slip inbox drafts: $error');
+      }
+    }
+    return drafts;
   }
 
   static Future<void> saveDrafts(List<SlipInboxDraft> drafts) async {
