@@ -29,7 +29,8 @@ class _SkeletonPulseState extends State<SkeletonPulse>
           animation: _controller,
           child: widget.child,
           builder: (context, child) => Opacity(
-            opacity: 0.55 + 0.45 * _controller.value,
+            opacity: 0.55 +
+                0.45 * Curves.easeInOutCubic.transform(_controller.value),
             child: child,
           ),
         ),

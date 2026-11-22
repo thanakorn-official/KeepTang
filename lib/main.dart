@@ -59,6 +59,8 @@ class KeepTangApp extends StatelessWidget {
             return MaterialApp(
               title: currentLang == 'th' ? 'เก็บตัง' : 'KeepTang',
               debugShowCheckedModeBanner: false,
+              themeAnimationDuration: const Duration(milliseconds: 360),
+              themeAnimationCurve: Curves.easeInOutCubic,
               locale: Locale(currentLang),
               supportedLocales: const [
                 Locale('th'),
