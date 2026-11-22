@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -33,6 +32,8 @@ class SlipInboxDraft {
   final bool selected;
   final String? transactionNo;
   final String? assetId;
+
+  String? get referenceNumber => transactionNo;
 
   SlipInboxDraft copyWith({
     String? title,
@@ -97,10 +98,6 @@ class SlipInboxService {
   static const _draftsKey = 'slip_inbox_drafts';
   static const _corruptDraftsBackupKey = 'slip_inbox_drafts_corrupt_backup';
   static const _processedAssetsKey = 'slip_inbox_processed_assets';
-  static const autoScanPermissionRequestedKey =
-      'slip_auto_scan_permission_requested';
-  static const autoScanRetryAfterKey = 'slip_auto_scan_retry_after';
-  static const lastScanAtKey = 'slip_inbox_last_scan_at';
   static final _random = Random.secure();
 
   static Future<List<SlipInboxDraft>> loadDrafts() async {

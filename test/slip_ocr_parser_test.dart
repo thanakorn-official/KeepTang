@@ -57,7 +57,8 @@ Reference: REF-20261105-1234
 เวลา 14:25
 ''');
 
-      expect(result.date, DateTime(2026, 11, 5));
+      expect(result.date, DateTime(2026, 11, 5, 14, 25));
+      expect(result.hasTime, isTrue);
     });
 
     test('reads English month-first dates', () {
@@ -138,7 +139,37 @@ Reference 123456789012
         transactionNo: result.transactionNumber!,
       );
 
-      expect(transaction.toMap()['transactionNo'], 'TRX-123456789');
+      final data = transaction.toMap();
+      expect(data['referenceNumber'], 'TRX-123456789');
+      expect(data['transactionNo'], 'TRX-123456789');
+      data.remove('referenceNumber');
+      expect(TransactionModel.fromMap(data).referenceNumber, 'TRX-123456789');
+      data['referenceNumber'] = '';
+      expect(TransactionModel.fromMap(data).referenceNumber, isEmpty);
+    });
+
+    test('reads a Thai reference on the next line and keeps leading zeros', () {
+      final result = SlipOcrParser.parse('''
+โอนเงินสำเร็จ
+จำนวนเงิน 125.00 บาท
+เลขที่อ้างอิงการโอน
+๐๐๑๒๓๔๕๖๗๘
+''');
+
+      expect(result.referenceNumber, '0012345678');
+      expect(result.looksLikeTransferSlip, isTrue);
+    });
+
+    test('does not qualify an invoice with an amount, date and reference', () {
+      final result = SlipOcrParser.parse('''
+Tax invoice
+Date: 2026-11-05
+Total: THB 749.00
+Reference: INV-00123456
+''');
+
+      expect(result.amount, 749);
+      expect(result.looksLikeTransferSlip, isFalse);
     });
   });
 

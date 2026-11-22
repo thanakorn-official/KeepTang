@@ -90,7 +90,7 @@ class _SplashScreenState extends State<SplashScreen> {
       await minimumDisplayTime;
       if (!mounted) return;
 
-      final destination = GuestService.hasUsername
+      final destination = GuestService.hasActiveGuest
           ? DashboardScreen(initialSnapshot: initialSnapshot)
           : const GuestSetupScreen();
       Navigator.of(context).pushReplacement(
@@ -126,16 +126,15 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<QuerySnapshot?> _prepareAccount() async {
-    await GuestService.ensureGuest();
+    await GuestService.loadSavedGuest();
+    if (!GuestService.hasActiveGuest) return null;
+
+    await GuestService.finishPendingLegacyMigration();
     await GuestService.restoreCustomSettings();
     await _loadSavedCategoryStyles();
 
-    if (!GuestService.hasUsername) return null;
-
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('guests')
-          .doc(GuestService.guestId)
+      final snapshot = await GuestService.activeGuestDocument
           .collection('transactions')
           .orderBy('date', descending: true)
           .get()
@@ -373,7 +372,7 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Widget _buildPieChartFlightShuttle(
-    BuildContext _flightContext,
+    BuildContext flightContext,
     Animation<double> animation,
     HeroFlightDirection direction,
     BuildContext fromHeroContext,

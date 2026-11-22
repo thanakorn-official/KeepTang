@@ -94,10 +94,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Icons.store,
   ];
 
-  CollectionReference get _transactionsCollection => FirebaseFirestore.instance
-      .collection('guests')
-      .doc(GuestService.guestId)
-      .collection('transactions');
+  CollectionReference get _transactionsCollection =>
+      GuestService.activeGuestDocument.collection('transactions');
 
   bool _isInTrash(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -268,6 +266,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall),
+                                Text(
+                                  '${T.get('firebaseDocumentId')} ${doc.id}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
                                 Text(
                                     '${T.get('deletedAt')} ${DateFormat('dd/MM/yyyy HH:mm').format(deletedAt)}',
                                     style: Theme.of(context)

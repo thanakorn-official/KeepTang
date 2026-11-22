@@ -11,6 +11,8 @@ import '../widgets/app_logo.dart';
 import '../widgets/skeleton_loader.dart';
 import 'dashboard_screen.dart';
 
+enum _GuestSetupMode { choose, create, restore, created }
+
 class GuestSetupScreen extends StatefulWidget {
   const GuestSetupScreen({super.key});
 
@@ -46,65 +48,104 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
     'การลงทุน': Icons.trending_up,
     'อื่นๆ': Icons.category,
   };
-  final _controller = TextEditingController();
+  final _usernameController =
+      TextEditingController(text: GuestService.username);
+  final _guestIdController = TextEditingController();
   final _firstPaymentController = TextEditingController();
   final Set<String> _selectedCategories = {};
+  _GuestSetupMode _mode = _GuestSetupMode.choose;
   bool _busy = false;
-  bool _isRestoring = false;
+  String? _errorKey;
   int _setupStep = 0;
+
+  bool get _isCreating => _mode == _GuestSetupMode.create;
+
+  bool get _isRestoring => _mode == _GuestSetupMode.restore;
 
   @override
   void dispose() {
-    _controller.dispose();
+    _usernameController.dispose();
+    _guestIdController.dispose();
     _firstPaymentController.dispose();
     super.dispose();
   }
 
-  void _copyGuestId() {
-    Clipboard.setData(ClipboardData(text: GuestService.guestId));
+  void _setMode(_GuestSetupMode mode) {
+    setState(() {
+      _mode = mode;
+      _errorKey = null;
+      _setupStep = 0;
+    });
+  }
+
+  Future<void> _copyGuestId() async {
+    final id = GuestService.guestId;
+    if (id.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: id));
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(T.get('guestIdCopied'))),
     );
   }
 
   Future<void> _start() async {
-    final inputVal = _controller.text.trim();
+    if (_busy || (!_isCreating && !_isRestoring)) return;
+    final isRestoring = _isRestoring;
+    final inputVal =
+        (isRestoring ? _guestIdController : _usernameController).text.trim();
     if (inputVal.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(_isRestoring
+            content: Text(isRestoring
                 ? T.get('restoreGuestIdEmpty')
                 : T.get('usernameEmpty'))),
       );
       return;
     }
     final firstPayment = _firstPaymentController.text.trim();
-    if (!_isRestoring && firstPayment.isEmpty) {
+    if (!isRestoring && firstPayment.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(T.get('firstPaymentRequired'))),
       );
       return;
     }
-    if (!_isRestoring && firstPayment == _unspecified) {
+    if (!isRestoring && firstPayment == _unspecified) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(T.get('firstPaymentReserved'))),
       );
       return;
     }
-    if (!_isRestoring && _selectedCategories.isEmpty) {
+    if (!isRestoring && _selectedCategories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(T.get('starterCategoryRequired'))),
       );
       return;
     }
 
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _errorKey = null;
+    });
 
-    if (_isRestoring) {
-      await GuestService.setCustomGuestId(inputVal);
-      await GuestService.restoreCustomSettings();
-    } else {
-      await GuestService.setUsername(inputVal);
+    try {
+      if (isRestoring) {
+        final restored = await GuestService.restoreGuest(inputVal);
+        if (!mounted) return;
+        if (!restored) {
+          setState(() => _errorKey = 'restoreGuestIdNotFound');
+          return;
+        }
+        await GuestService.restoreCustomSettings();
+        if (mounted) _openDashboard();
+        return;
+      }
+
+      if (!GuestService.hasActiveGuest) {
+        await GuestService.createGuest(inputVal);
+      }
+      if (!GuestService.hasActiveGuest) {
+        throw StateError('Guest account was not activated.');
+      }
       final prefs = await SharedPreferences.getInstance();
       final categories = _starterCategories
           .where(_selectedCategories.contains)
@@ -116,9 +157,23 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
         jsonEncode([firstPayment, _unspecified]),
       );
       await GuestService.saveCustomSettings();
+      if (mounted) _setMode(_GuestSetupMode.created);
+    } catch (error) {
+      debugPrint('Could not complete guest setup: $error');
+      if (mounted) {
+        setState(() => _errorKey =
+            isRestoring ? 'restoreGuestIdError' : 'createGuestIdError');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
+  }
 
-    if (!mounted) return;
+  void _openDashboard() {
+    if (!GuestService.hasActiveGuest) {
+      _setMode(_GuestSetupMode.choose);
+      return;
+    }
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const DashboardScreen()),
       (route) => false,
@@ -126,7 +181,8 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
   }
 
   void _continueSetup() {
-    if (_setupStep == 0 && _controller.text.trim().isEmpty) {
+    if (_busy || !_isCreating || _setupStep >= 2) return;
+    if (_setupStep == 0 && _usernameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(T.get('usernameEmpty'))),
       );
@@ -303,27 +359,65 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                               letterSpacing: -0.5,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _isRestoring
-                                ? T.get('restoreTagline')
-                                : T.get('guestTagline'),
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 14,
-                              height: 1.45,
-                              color: scheme.onSurfaceVariant,
+                          if (_mode != _GuestSetupMode.created) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              T.get(switch (_mode) {
+                                _GuestSetupMode.choose => 'guestAccessPrompt',
+                                _GuestSetupMode.restore => 'restoreTagline',
+                                _ => 'guestTagline',
+                              }),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                height: 1.45,
+                                color: scheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                          if (!_isRestoring) ...[
+                          ],
+                          if (_mode == _GuestSetupMode.choose) ...[
+                            const SizedBox(height: 18),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () =>
+                                    _setMode(_GuestSetupMode.create),
+                                icon: const Icon(Icons.person_add_outlined),
+                                label: Text(T.get('createGuestId')),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () =>
+                                    _setMode(_GuestSetupMode.restore),
+                                icon: const Icon(Icons.key_outlined),
+                                label: Text(T.get('useExistingGuestId')),
+                              ),
+                            ),
+                          ],
+                          if (_mode == _GuestSetupMode.created) ...[
                             const SizedBox(height: 14),
                             _buildGuestIdCard(scheme),
+                            const SizedBox(height: 18),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: _busy ? null : _openDashboard,
+                                child: Text(T.get('startButton')),
+                              ),
+                            ),
                           ],
-                          if (!_isRestoring) _buildSetupProgress(scheme),
-                          const SizedBox(height: 14),
-                          if (_isRestoring || _setupStep == 0)
+                          if (_isCreating) _buildSetupProgress(scheme),
+                          if (_isRestoring ||
+                              (_isCreating && _setupStep == 0)) ...[
+                            const SizedBox(height: 14),
                             TextField(
-                              controller: _controller,
+                              controller: _isRestoring
+                                  ? _guestIdController
+                                  : _usernameController,
+                              enabled: !_busy,
                               textInputAction: TextInputAction.done,
                               onSubmitted: (_) =>
                                   _isRestoring ? _start() : _continueSetup(),
@@ -338,7 +432,8 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                                 counterText: '',
                               ),
                             ),
-                          if (!_isRestoring && _setupStep == 1) ...[
+                          ],
+                          if (_isCreating && _setupStep == 1) ...[
                             const SizedBox(height: 20),
                             Card(
                               child: Padding(
@@ -371,6 +466,7 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                                     const SizedBox(height: 10),
                                     TextField(
                                       controller: _firstPaymentController,
+                                      enabled: !_busy,
                                       textInputAction: TextInputAction.next,
                                       maxLength: 40,
                                       decoration: InputDecoration(
@@ -387,7 +483,7 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                               ),
                             ),
                           ],
-                          if (!_isRestoring && _setupStep == 2) ...[
+                          if (_isCreating && _setupStep == 2) ...[
                             const SizedBox(height: 14),
                             Card(
                               child: Padding(
@@ -404,9 +500,8 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                                     const SizedBox(height: 4),
                                     Text(
                                       T.get('starterCategoriesHint'),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall,
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
                                     ),
                                     const SizedBox(height: 8),
                                     ..._starterCategories.map(
@@ -432,13 +527,17 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                                             color: scheme.primary,
                                           ),
                                         ),
-                                        onChanged: (checked) => setState(() {
-                                          if (checked == true) {
-                                            _selectedCategories.add(category);
-                                          } else {
-                                            _selectedCategories.remove(category);
-                                          }
-                                        }),
+                                        onChanged: _busy
+                                            ? null
+                                            : (checked) => setState(() {
+                                                  if (checked == true) {
+                                                    _selectedCategories
+                                                        .add(category);
+                                                  } else {
+                                                    _selectedCategories
+                                                        .remove(category);
+                                                  }
+                                                }),
                                       ),
                                     ),
                                   ],
@@ -446,68 +545,88 @@ class _GuestSetupScreenState extends State<GuestSetupScreen> {
                               ),
                             ),
                           ],
-                          const SizedBox(height: 18),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 52,
-                            child: ElevatedButton(
-                              onPressed: _busy
-                                  ? null
-                                  : _isRestoring
-                                      ? _start
-                                      : _setupStep < 2
-                                          ? _continueSetup
-                                          : _start,
-                              style: ElevatedButton.styleFrom(
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
+                          if (_errorKey case final errorKey?) ...[
+                            const SizedBox(height: 12),
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                T.get(errorKey),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: scheme.error),
                               ),
-                              child: _busy
-                                  ? const SkeletonPulse(
-                                      child: SkeletonBlock(
-                                        width: 110,
-                                        height: 18,
-                                      ),
-                                    )
-                                  : Text(
-                                      _isRestoring
-                                          ? T.get('restoreButton')
-                                          : _setupStep < 2
-                                              ? T.get('continue')
-                                              : T.get('startButton'),
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
                             ),
-                          ),
-                          if (!_isRestoring && _setupStep > 0)
+                          ],
+                          if (_isCreating || _isRestoring) ...[
+                            const SizedBox(height: 18),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: ElevatedButton(
+                                onPressed: _busy
+                                    ? null
+                                    : _isRestoring
+                                        ? _start
+                                        : _setupStep < 2
+                                            ? _continueSetup
+                                            : _start,
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: _busy
+                                    ? const SkeletonPulse(
+                                        child: SkeletonBlock(
+                                          width: 110,
+                                          height: 18,
+                                        ),
+                                      )
+                                    : Text(
+                                        _isRestoring
+                                            ? T.get('restoreButton')
+                                            : _setupStep < 2
+                                                ? T.get('continue')
+                                                : T.get('createGuestId'),
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                              ),
+                            ),
                             TextButton.icon(
                               onPressed: _busy
                                   ? null
-                                  : () => setState(() => _setupStep--),
+                                  : () {
+                                      if (_isCreating && _setupStep > 0) {
+                                        setState(() {
+                                          _setupStep--;
+                                          _errorKey = null;
+                                        });
+                                      } else {
+                                        _setMode(_GuestSetupMode.choose);
+                                      }
+                                    },
                               icon: const Icon(Icons.arrow_back),
                               label: Text(T.get('back')),
                             ),
-                          const SizedBox(height: 16),
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _isRestoring = !_isRestoring;
-                                _setupStep = 0;
-                                _controller.clear();
-                              });
-                            },
-                            child: Text(
-                              _isRestoring
-                                  ? T.get('restoreSwitchBack')
-                                  : T.get('restoreSwitchTo'),
-                              textAlign: TextAlign.center,
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _setMode(
+                                        _isRestoring
+                                            ? _GuestSetupMode.create
+                                            : _GuestSetupMode.restore,
+                                      ),
+                              child: Text(
+                                T.get(_isRestoring
+                                    ? 'createGuestId'
+                                    : 'useExistingGuestId'),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),

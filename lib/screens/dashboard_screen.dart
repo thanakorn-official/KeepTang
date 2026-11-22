@@ -16,6 +16,7 @@ import '../main.dart';
 import '../services/guest_service.dart';
 import '../services/slip_inbox_service.dart';
 import '../services/slip_ocr_parser.dart';
+import '../services/thai_slip_ocr.dart';
 import '../utils/l10n.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/skeleton_loader.dart';
@@ -30,8 +31,7 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen>
-    with WidgetsBindingObserver {
+class _DashboardScreenState extends State<DashboardScreen> {
   static const _sortOrderPreferenceKey = 'dashboard_sort_order';
   static const _groupTypePreferenceKey = 'dashboard_group_type';
   static const _sortOrderOptions = ['newest', 'oldest', 'highest', 'lowest'];
@@ -165,15 +165,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   Timer? _undoTimer;
   final Set<String> _selectedTransactionIds = {};
   List<SlipInboxDraft> _slipDrafts = [];
-  bool _isScanningNewSlips = false;
   bool _isSlipInboxOpen = false;
-  bool _slipScanDeferred = false;
-  DateTime? _automaticSlipScanRetryAt;
 
-  CollectionReference get _transactionsCollection => FirebaseFirestore.instance
-      .collection('guests')
-      .doc(GuestService.guestId)
-      .collection('transactions');
+  CollectionReference get _transactionsCollection =>
+      GuestService.activeGuestDocument.collection('transactions');
 
   String _groupType = 'monthly';
   String _sortOrder = 'newest';
@@ -190,30 +185,14 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _dashboardScrollController.addListener(_handleDashboardScroll);
     _transactionsStream =
         _transactionsCollection.orderBy('date', descending: true).snapshots();
     _loadCustomSettings();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_initializeSlipInbox());
-    });
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      unawaited(_saveSlipScanTime());
-    } else if (state == AppLifecycleState.resumed && !_isSlipInboxOpen) {
-      unawaited(_scanForNewSlips());
-    } else if (state == AppLifecycleState.resumed) {
-      _slipScanDeferred = true;
-    }
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _floatingActionsTimer?.cancel();
     _undoTimer?.cancel();
     _dashboardScrollController.removeListener(_handleDashboardScroll);
@@ -233,213 +212,101 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
   }
 
-  Future<void> _initializeSlipInbox() async {
-    try {
-      _slipDrafts = await SlipInboxService.loadDrafts();
-      if (!mounted) return;
-      if (_slipDrafts.isNotEmpty) {
-        await _showSlipInboxSheet();
-        if (!mounted) return;
-      }
+  Future<int?> _scanRecentSlips({required bool Function() isActive}) async {
+    final assets = await PhotoManager.getAssetListPaged(
+      page: 0,
+      pageCount: 24,
+      type: RequestType.image,
+      filterOption: FilterOptionGroup(
+        orders: const [
+          OrderOption(type: OrderOptionType.createDate, asc: false),
+        ],
+      ),
+    );
+    if (!isActive()) return null;
+    if (assets.isEmpty) return 0;
 
-      final prefs = await SharedPreferences.getInstance();
-      final lastScan = prefs.getString(SlipInboxService.lastScanAtKey);
-      if (lastScan == null) {
-        await prefs.setString(
-          SlipInboxService.lastScanAtKey,
-          DateTime.now().toIso8601String(),
-        );
-        return;
-      }
-      await _scanForNewSlips();
-    } catch (error) {
-      debugPrint('Could not initialize slip inbox: $error');
-    }
-  }
+    final processedIds = await SlipInboxService.loadProcessedAssetIds();
+    final pendingIds =
+        _slipDrafts.map((draft) => draft.assetId).whereType<String>().toSet();
 
-  Future<void> _saveSlipScanTime() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        SlipInboxService.lastScanAtKey,
-        DateTime.now().toIso8601String(),
-      );
-    } catch (error) {
-      debugPrint('Could not save slip scan time: $error');
-    }
-  }
-
-  Future<void> _scanForNewSlips() async {
-    final retryAt = _automaticSlipScanRetryAt;
-    if (_isScanningNewSlips ||
-        !mounted ||
-        (retryAt != null && DateTime.now().isBefore(retryAt)) ||
-        (defaultTargetPlatform != TargetPlatform.android &&
-            defaultTargetPlatform != TargetPlatform.iOS)) {
-      return;
-    }
-
-    _isScanningNewSlips = true;
     var addedCount = 0;
-    final scanStartedAt = DateTime.now();
-    SharedPreferences? scanPreferences;
+    final recognizer = TextRecognizer();
     try {
-      final prefs = await SharedPreferences.getInstance();
-      scanPreferences = prefs;
-      final retryValue =
-          prefs.getString(SlipInboxService.autoScanRetryAfterKey);
-      final savedRetryAt =
-          retryValue == null ? null : DateTime.tryParse(retryValue);
-      if (savedRetryAt != null && DateTime.now().isBefore(savedRetryAt)) {
-        _automaticSlipScanRetryAt = savedRetryAt;
-        return;
-      }
-      if (retryValue != null) {
-        await prefs.remove(SlipInboxService.autoScanRetryAfterKey);
-      }
-
-      final lastScanValue = prefs.getString(SlipInboxService.lastScanAtKey);
-      if (lastScanValue == null) {
-        await _saveSlipScanTime();
-        return;
-      }
-      final parsedLastScan = DateTime.tryParse(lastScanValue);
-      final lastScan =
-          parsedLastScan ?? scanStartedAt.subtract(const Duration(days: 30));
-      if (parsedLastScan == null) {
-        debugPrint('Invalid slip scan timestamp; scanning the last 30 days.');
-      }
-
-      const permissionRequest = PermissionRequestOption(
-        androidPermission: AndroidPermission(
-          type: RequestType.image,
-          mediaLocation: false,
-        ),
-      );
-      var permission = await PhotoManager.getPermissionState(
-        requestOption: permissionRequest,
-      );
-      if (!permission.hasAccess &&
-          permission == PermissionState.notDetermined &&
-          prefs.getBool(SlipInboxService.autoScanPermissionRequestedKey) !=
-              true) {
-        await prefs.setBool(
-          SlipInboxService.autoScanPermissionRequestedKey,
-          true,
-        );
-        permission = await PhotoManager.requestPermissionExtend(
-          requestOption: permissionRequest,
-        );
-        if (!permission.hasAccess) _showPhotoPermissionError();
-      }
-      if (!permission.hasAccess) {
-        return;
-      }
-
-      final paths = await PhotoManager.getAssetPathList(
-        type: RequestType.image,
-        onlyAll: true,
-        filterOption: FilterOptionGroup(
-          createTimeCond: DateTimeCond(
-            min: lastScan,
-            max: DateTime.now(),
-          ),
-          orders: const [
-            OrderOption(type: OrderOptionType.createDate, asc: false),
-          ],
-        ),
-      );
-      final processedAssetIds = await SlipInboxService.loadProcessedAssetIds();
-      final pendingAssetIds =
-          _slipDrafts.map((draft) => draft.assetId).whereType<String>().toSet();
-      if (paths.isNotEmpty) {
-        final allImages = paths.first;
-        final imageCount = await allImages.assetCountAsync;
-        final recognizer = TextRecognizer();
-        try {
-          for (var start = 0; start < imageCount; start += 40) {
-            final assets = await allImages.getAssetListRange(
-              start: start,
-              end: (start + 40).clamp(0, imageCount),
-            );
-            for (final asset in assets) {
-              if (processedAssetIds.contains(asset.id) ||
-                  pendingAssetIds.contains(asset.id)) {
-                continue;
-              }
-              final file = await asset.file;
-              if (file == null) continue;
-              final imageBytes = await file.readAsBytes();
-              final duplicateIndex = await _findQueuedImage(imageBytes);
-              if (duplicateIndex != null) {
-                final duplicate = _slipDrafts[duplicateIndex];
-                _slipDrafts[duplicateIndex] =
-                    duplicate.copyWith(assetId: asset.id);
-                pendingAssetIds.add(asset.id);
-                await SlipInboxService.saveDrafts(_slipDrafts);
-                continue;
-              }
-              final recognizedText = await _recognizeText(
-                recognizer,
-                file.path,
-              );
-              final result = SlipOcrParser.parse(recognizedText);
-              if (result.amount == null && result.transactionNumber == null) {
-                continue;
-              }
-
-              final draft = await SlipInboxService.storeDraft(
-                imageBytes: imageBytes,
-                extension: _imageExtension(file.path),
-                title: '',
-                amount: result.amount,
-                date: result.date ?? asset.createDateTime,
-                category: _categoryIcons.keys.first,
-                paymentMethod: _paymentIcons.keys.first,
-                isExpense: true,
-                transactionNo: result.transactionNumber,
-                assetId: asset.id,
-              );
-              _slipDrafts = [..._slipDrafts, draft];
-              pendingAssetIds.add(asset.id);
-              await SlipInboxService.saveDrafts(_slipDrafts);
-              addedCount++;
-            }
-          }
-        } finally {
-          await recognizer.close();
+      for (final asset in assets) {
+        if (!isActive()) return null;
+        if (processedIds.contains(asset.id) || pendingIds.contains(asset.id)) {
+          continue;
         }
-      }
 
-      await prefs.setString(
-        SlipInboxService.lastScanAtKey,
-        scanStartedAt.toIso8601String(),
-      );
-      await prefs.remove(SlipInboxService.autoScanRetryAfterKey);
-      _automaticSlipScanRetryAt = null;
-      if (addedCount > 0 && mounted && !_isSlipInboxOpen) {
-        await _showSlipInboxSheet();
-      }
-    } catch (error) {
-      debugPrint('Could not scan new slips: $error');
-      final retryAt = DateTime.now().add(const Duration(minutes: 5));
-      _automaticSlipScanRetryAt = retryAt;
-      try {
-        final prefs = scanPreferences ?? await SharedPreferences.getInstance();
-        await prefs.setString(
-          SlipInboxService.autoScanRetryAfterKey,
-          retryAt.toIso8601String(),
-        );
-      } catch (saveError) {
-        debugPrint('Could not schedule slip scan retry: $saveError');
+        final File image;
+        final SlipOcrResult latinResult;
+        try {
+          final file = await asset.file;
+          if (!isActive()) return null;
+          if (file == null) continue;
+          image = file;
+          latinResult = SlipOcrParser.parse(
+            await _recognizeText(recognizer, file.path),
+          );
+        } catch (error) {
+          debugPrint('Could not read a recent gallery image: $error');
+          continue;
+        }
+        if (!isActive()) return null;
+        final SlipOcrResult result;
+        if (latinResult.looksLikeTransferSlip) {
+          result = await _enrichSlipWithThaiText(latinResult, image.path);
+        } else if (latinResult.amount != null &&
+            (latinResult.date != null || latinResult.referenceNumber != null)) {
+          final thai = await _readThaiSlip(image.path);
+          if (thai == null || !thai.looksLikeTransferSlip) continue;
+          result = _mergeSlipReadings(thai, latinResult);
+        } else {
+          continue;
+        }
+        if (!isActive()) return null;
+
+        final imageBytes = await image.readAsBytes();
+        final duplicateIndex = await _findQueuedImage(imageBytes);
+        if (!isActive()) return null;
+        if (duplicateIndex != null) {
+          final existing = _slipDrafts[duplicateIndex];
+          _slipDrafts[duplicateIndex] = existing.copyWith(
+            assetId: asset.id,
+            title: existing.title.trim().isEmpty ? result.title : null,
+            transactionNo: (existing.referenceNumber ?? '').trim().isEmpty
+                ? result.referenceNumber
+                : null,
+          );
+        } else {
+          final draft = await SlipInboxService.storeDraft(
+            imageBytes: imageBytes,
+            extension: _imageExtension(image.path),
+            title: result.title ?? '',
+            amount: result.amount,
+            date: _dateTimeFromSlip(result, asset.createDateTime),
+            category: _categoryIcons.keys.first,
+            paymentMethod: _paymentIcons.keys.first,
+            isExpense: true,
+            transactionNo: result.referenceNumber,
+            assetId: asset.id,
+          );
+          if (!isActive()) {
+            await File(draft.imagePath).delete();
+            return null;
+          }
+          _slipDrafts = [..._slipDrafts, draft.copyWith(selected: false)];
+          addedCount++;
+        }
+        pendingIds.add(asset.id);
+        await SlipInboxService.saveDrafts(_slipDrafts);
       }
     } finally {
-      _isScanningNewSlips = false;
-      if (_slipScanDeferred && mounted && !_isSlipInboxOpen) {
-        _slipScanDeferred = false;
-        unawaited(_scanForNewSlips());
-      }
+      await recognizer.close();
     }
+
+    return addedCount;
   }
 
   Future<String> _recognizeText(
@@ -462,17 +329,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     for (var index = 0; index < _slipDrafts.length; index++) {
       final file = File(_slipDrafts[index].imagePath);
       if (!await file.exists()) continue;
+      if (await file.length() != imageBytes.length) continue;
       final queuedBytes = await file.readAsBytes();
       if (listEquals(queuedBytes, imageBytes)) return index;
     }
     return null;
-  }
-
-  void _showPhotoPermissionError() {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(T.get('slipPhotoPermissionDenied'))),
-    );
   }
 
   void _showSlipInboxError() {
@@ -520,8 +381,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     _isSlipInboxOpen = true;
     var isProcessing = false;
     var processingMessage = '';
+    String? scanStatus;
 
     try {
+      _slipDrafts = await SlipInboxService.loadDrafts();
+      if (!mounted) return;
       await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
@@ -529,9 +393,50 @@ class _DashboardScreenState extends State<DashboardScreen>
         showDragHandle: true,
         builder: (sheetContext) => StatefulBuilder(
           builder: (context, setSheetState) {
-            final canScanSlips = !kIsWeb &&
-                (defaultTargetPlatform == TargetPlatform.android ||
-                    defaultTargetPlatform == TargetPlatform.iOS);
+            final canScanSlips = _supportsSlipOcr;
+
+            Future<void> scanRecentImages() async {
+              if (isProcessing) return;
+              bool isActive() =>
+                  mounted &&
+                  sheetContext.mounted &&
+                  ModalRoute.of(sheetContext)?.isCurrent == true;
+
+              setSheetState(() {
+                isProcessing = true;
+                processingMessage = T.get('slipGalleryScanning');
+                scanStatus = null;
+              });
+              try {
+                const permissionRequest = PermissionRequestOption(
+                  androidPermission: AndroidPermission(
+                    type: RequestType.image,
+                    mediaLocation: false,
+                  ),
+                );
+                final permission = await PhotoManager.requestPermissionExtend(
+                  requestOption: permissionRequest,
+                );
+                if (!isActive()) return;
+                if (!permission.hasAccess) {
+                  scanStatus = T.get('slipPhotoPermissionDenied');
+                  return;
+                }
+
+                final count = await _scanRecentSlips(isActive: isActive);
+                if (count == null || !isActive()) return;
+                scanStatus = count == 0
+                    ? T.get('slipGalleryNoNewSlips')
+                    : T.get('slipOcrReview');
+              } catch (error) {
+                debugPrint('Could not scan recent gallery images: $error');
+                scanStatus = T.get('slipInboxFailed');
+              } finally {
+                if (sheetContext.mounted) {
+                  setSheetState(() => isProcessing = false);
+                }
+              }
+            }
 
             Future<void> importImage(
               XFile image, {
@@ -540,27 +445,21 @@ class _DashboardScreenState extends State<DashboardScreen>
               setSheetState(() {
                 isProcessing = true;
                 processingMessage = T.get('slipOcrProcessing');
+                scanStatus = null;
               });
               try {
-                final recognized = TextRecognizer();
-                late final String text;
-                try {
-                  text = await _recognizeText(recognized, image.path);
-                } finally {
-                  await recognized.close();
-                }
-                final result = SlipOcrParser.parse(text);
+                final result = await _readSlipImage(image);
                 final bytes = await image.readAsBytes();
                 final draft = await SlipInboxService.storeDraft(
                   imageBytes: bytes,
                   extension: _imageExtension(image.path),
-                  title: '',
+                  title: result.title ?? '',
                   amount: result.amount,
-                  date: result.date ?? DateTime.now(),
+                  date: _dateTimeFromSlip(result, DateTime.now()),
                   category: _categoryIcons.keys.first,
                   paymentMethod: _paymentIcons.keys.first,
                   isExpense: true,
-                  transactionNo: result.transactionNumber,
+                  transactionNo: result.referenceNumber,
                 );
                 final updatedDrafts = [..._slipDrafts, draft];
                 await SlipInboxService.saveDrafts(updatedDrafts);
@@ -568,16 +467,14 @@ class _DashboardScreenState extends State<DashboardScreen>
                 setState(() => _slipDrafts = updatedDrafts);
                 setSheetState(() {
                   isProcessing = keepProcessing;
-                  processingMessage = result.amount == null
-                      ? T.get('slipOcrNoAmount')
-                      : T.get('slipOcrReview');
+                  scanStatus = _slipReviewMessage(result);
                 });
               } catch (error) {
                 debugPrint('Could not import slip image: $error');
                 if (!sheetContext.mounted) return;
                 setSheetState(() {
                   isProcessing = keepProcessing;
-                  processingMessage = T.get('slipOcrFailed');
+                  scanStatus = T.get('slipOcrFailed');
                 });
               }
             }
@@ -630,10 +527,9 @@ class _DashboardScreenState extends State<DashboardScreen>
             }
 
             Future<void> editDraft(SlipInboxDraft draft) async {
-              final titleController = TextEditingController(text: draft.title);
-              final amountController = TextEditingController(
-                text: draft.amount?.toStringAsFixed(2) ?? '',
-              );
+              var title = draft.title;
+              var amountText = draft.amount?.toStringAsFixed(2) ?? '';
+              final referenceField = GlobalKey<FormFieldState<String>>();
               var date = draft.date;
               var category = _categoryIcons.containsKey(draft.category)
                   ? draft.category
@@ -652,15 +548,17 @@ class _DashboardScreenState extends State<DashboardScreen>
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            TextField(
-                              controller: titleController,
+                            TextFormField(
+                              initialValue: title,
+                              onChanged: (value) => title = value,
                               decoration: InputDecoration(
                                 labelText: T.get('titleLabel'),
                               ),
                             ),
                             const SizedBox(height: 12),
-                            TextField(
-                              controller: amountController,
+                            TextFormField(
+                              initialValue: amountText,
+                              onChanged: (value) => amountText = value,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
                                 decimal: true,
@@ -670,10 +568,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(T.get('transactionDateTime')),
-                            ),
                             _buildDateTimeControls(
                               pickerContext: context,
                               value: date,
@@ -682,6 +576,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                             DropdownButtonFormField<String>(
                               initialValue: category,
+                              isExpanded: true,
                               decoration: InputDecoration(
                                 labelText: T.get('categoryLabel'),
                               ),
@@ -716,6 +611,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
                               initialValue: paymentMethod,
+                              isExpanded: true,
                               decoration: InputDecoration(
                                 labelText: T.get('paymentMethodLabel'),
                               ),
@@ -748,6 +644,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                               },
                             ),
                             const SizedBox(height: 12),
+                            _buildReferenceNumberField(
+                              referenceField,
+                              initialValue: draft.referenceNumber ?? '',
+                            ),
+                            const SizedBox(height: 12),
                             Wrap(
                               spacing: 8,
                               children: [
@@ -776,9 +677,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                         FilledButton(
                           onPressed: () {
                             final amount = double.tryParse(
-                              amountController.text.replaceAll(',', '').trim(),
+                              amountText.replaceAll(',', '').trim(),
                             );
                             if (amount == null ||
+                                !amount.isFinite ||
                                 amount <= 0 ||
                                 amount > 1000000000) {
                               ScaffoldMessenger.of(dialogContext).showSnackBar(
@@ -791,12 +693,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                             Navigator.pop(
                               dialogContext,
                               draft.copyWith(
-                                title: titleController.text.trim(),
+                                title: title.trim(),
                                 amount: amount,
                                 date: date,
                                 category: category,
                                 paymentMethod: paymentMethod,
                                 isExpense: isExpense,
+                                transactionNo: referenceField
+                                        .currentState?.value
+                                        ?.trim() ??
+                                    '',
                               ),
                             );
                           },
@@ -822,9 +728,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                     SnackBar(content: Text(T.get('saveError'))),
                   );
                 }
-              } finally {
-                titleController.dispose();
-                amountController.dispose();
               }
             }
 
@@ -857,6 +760,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               if (selected.isEmpty) return;
               if (selected.any((draft) =>
                   draft.amount == null ||
+                  !draft.amount!.isFinite ||
                   draft.amount! <= 0 ||
                   draft.amount! > 1000000000)) {
                 ScaffoldMessenger.of(sheetContext).showSnackBar(
@@ -885,8 +789,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                       'isExpense': draft.isExpense ? 1 : 0,
                       'category': draft.category,
                       'paymentMethod': draft.paymentMethod,
-                      if (draft.transactionNo != null)
-                        'transactionNo': draft.transactionNo,
+                      ...TransactionModel.referenceFields(
+                        draft.referenceNumber ?? '',
+                      ),
                     });
                     draftIds.add(draft.id);
                   }
@@ -953,11 +858,18 @@ class _DashboardScreenState extends State<DashboardScreen>
                             ),
                           ],
                         ),
+                        if (canScanSlips)
+                          TextButton.icon(
+                            onPressed: isProcessing ? null : scanRecentImages,
+                            icon: const Icon(Icons.manage_search_rounded),
+                            label: Text(T.get('slipGalleryScanRecent')),
+                          ),
                         if (isProcessing) ...[
                           const LinearProgressIndicator(),
                           const SizedBox(height: 6),
                           Text(processingMessage),
-                        ],
+                        ] else if (scanStatus != null)
+                          Text(scanStatus!, textAlign: TextAlign.center),
                         if (!canScanSlips)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1023,10 +935,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                                                   },
                                           ),
                                           GestureDetector(
-                                            onTap: () => _showSlipImagePreview(
-                                              sheetContext,
-                                              draft.imagePath,
-                                            ),
+                                            onTap: isProcessing
+                                                ? null
+                                                : () => _showSlipImagePreview(
+                                                      sheetContext,
+                                                      draft.imagePath,
+                                                    ),
                                             child: ClipRRect(
                                               borderRadius:
                                                   BorderRadius.circular(6),
@@ -1034,6 +948,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                                 File(draft.imagePath),
                                                 width: 34,
                                                 height: 42,
+                                                cacheWidth: 144,
                                                 fit: BoxFit.cover,
                                                 errorBuilder: (_, __, ___) =>
                                                     const Icon(
@@ -1054,7 +969,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     subtitle: Text(
-                                      '${draft.amount == null ? T.get('slipInboxMissingAmount') : NumberFormat('#,##0.00').format(draft.amount)}  •  ${DateFormat('dd/MM/yyyy').format(draft.date)}',
+                                      '${draft.amount == null ? T.get('slipInboxMissingAmount') : NumberFormat('#,##0.00').format(draft.amount)}  •  ${DateFormat('dd/MM/yyyy HH:mm', languageNotifier.value).format(draft.date)}'
+                                      '${draft.referenceNumber?.isNotEmpty == true ? '\n${T.get('transactionReferenceShort')} ${draft.referenceNumber}' : ''}',
                                     ),
                                     trailing: Wrap(
                                       spacing: 0,
@@ -1105,12 +1021,11 @@ class _DashboardScreenState extends State<DashboardScreen>
           },
         ),
       );
+    } catch (error) {
+      debugPrint('Could not open slip inbox: $error');
+      _showSlipInboxError();
     } finally {
       _isSlipInboxOpen = false;
-      if (_slipScanDeferred && mounted && !_isScanningNewSlips) {
-        _slipScanDeferred = false;
-        unawaited(_scanForNewSlips());
-      }
     }
   }
 
@@ -2514,7 +2429,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           children: [
             Icon(_iconOf(cat), color: _colorOf(cat), size: 20),
             const SizedBox(width: 8),
-            Text(cat),
+            Flexible(child: Text(cat, overflow: TextOverflow.ellipsis)),
           ],
         ),
       );
@@ -2545,6 +2460,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         Expanded(
           child: DropdownButtonFormField<String>(
             initialValue: selectedValue,
+            isExpanded: true,
             decoration: InputDecoration(
               labelText: T.get('categoryLabel'),
               border: outlined ? const OutlineInputBorder() : null,
@@ -2587,7 +2503,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             Icon(_paymentIconOf(method),
                 color: _paymentColorOf(method), size: 20),
             const SizedBox(width: 8),
-            Text(method),
+            Flexible(child: Text(method, overflow: TextOverflow.ellipsis)),
           ],
         ),
       );
@@ -2602,6 +2518,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         Expanded(
           child: DropdownButtonFormField<String>(
             initialValue: selectedValue,
+            isExpanded: true,
             decoration: InputDecoration(
               labelText: T.get('paymentMethodLabel'),
               border: outlined ? const OutlineInputBorder() : null,
@@ -2630,8 +2547,14 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _showEditDialog(TransactionModel tx) {
-    final titleController = TextEditingController(text: tx.title);
-    final amountController = TextEditingController(text: tx.amount.toString());
+    var title = tx.title;
+    var amountText = tx.amount.toString();
+    final referenceField = GlobalKey<FormFieldState<String>>();
+    var isSaving = false;
+    var isReadingSlip = false;
+    var dateEdited = false;
+    var timeEdited = false;
+    String? slipMessage;
     DateTime transactionDate = tx.date;
     String selectedCategory =
         (_categoryIcons.containsKey(tx.category) || tx.category == 'transfer')
@@ -2645,31 +2568,74 @@ class _DashboardScreenState extends State<DashboardScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setStateDialog) {
+          Future<void> readSlipDetails() async {
+            setStateDialog(() {
+              isReadingSlip = true;
+              slipMessage = T.get('slipOcrProcessing');
+            });
+            String? message;
+            try {
+              final image = await _chooseSlipImage(ctx);
+              if (image == null || !ctx.mounted) return;
+              final result = await _readSlipImage(image);
+              if (!ctx.mounted) return;
+              if (result.referenceNumber case final number?) {
+                referenceField.currentState?.didChange(number);
+              }
+              transactionDate = _dateTimeFromSlip(
+                result,
+                transactionDate,
+                fallback: tx.date,
+                keepDate: dateEdited,
+                keepTime: timeEdited,
+              );
+              message = _slipReviewMessage(
+                result,
+                checkAmount: false,
+                checkReference: true,
+              );
+            } catch (error) {
+              debugPrint('Could not read slip details: $error');
+              message = T.get('slipOcrFailed');
+            } finally {
+              if (ctx.mounted) {
+                setStateDialog(() {
+                  isReadingSlip = false;
+                  slipMessage = message;
+                });
+              }
+            }
+          }
+
           return AlertDialog(
             title: Text(T.get('edit')),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextField(
-                      controller: titleController,
+                  TextFormField(
+                      initialValue: title,
+                      onChanged: (value) => title = value,
+                      textInputAction: TextInputAction.next,
                       decoration:
                           InputDecoration(labelText: T.get('titleLabel'))),
                   const SizedBox(height: 16),
-                  TextField(
-                      controller: amountController,
+                  TextFormField(
+                      initialValue: amountText,
+                      onChanged: (value) => amountText = value,
                       decoration:
                           InputDecoration(labelText: T.get('amountLabel')),
-                      keyboardType: TextInputType.number),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      textInputAction: TextInputAction.next),
                   const SizedBox(height: 16),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(T.get('transactionDateTime')),
-                  ),
-                  const SizedBox(height: 4),
                   _buildDateTimeControls(
                     pickerContext: context,
                     value: transactionDate,
+                    enabled: !isReadingSlip && !isSaving,
+                    onDateEdited: () => dateEdited = true,
+                    onTimeEdited: () => timeEdited = true,
                     onChanged: (value) =>
                         setStateDialog(() => transactionDate = value),
                   ),
@@ -2687,6 +2653,35 @@ class _DashboardScreenState extends State<DashboardScreen>
                     onChanged: (val) =>
                         setStateDialog(() => selectedPaymentMethod = val!),
                   ),
+                  const SizedBox(height: 16),
+                  _buildReferenceNumberField(
+                    referenceField,
+                    initialValue: tx.referenceNumber,
+                    enabled: !isReadingSlip && !isSaving,
+                  ),
+                  if (_supportsSlipOcr)
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton.icon(
+                        onPressed:
+                            isReadingSlip || isSaving ? null : readSlipDetails,
+                        icon: const Icon(Icons.document_scanner_outlined),
+                        label: Text(T.get('readSlipDateTimeAndReference')),
+                      ),
+                    ),
+                  if (slipMessage != null)
+                    Text(
+                      slipMessage!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  const SizedBox(height: 14),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: SelectableText(
+                      '${T.get('firebaseDocumentId')} ${tx.id}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2695,25 +2690,42 @@ class _DashboardScreenState extends State<DashboardScreen>
                   onPressed: () => Navigator.pop(ctx),
                   child: Text(T.get('cancel'))),
               ElevatedButton(
-                onPressed: () async {
-                  try {
-                    await _transactionsCollection.doc(tx.id).update({
-                      'title': titleController.text,
-                      'amount':
-                          double.tryParse(amountController.text) ?? tx.amount,
-                      'date': transactionDate.toIso8601String(),
-                      'category': selectedCategory,
-                      'paymentMethod': selectedPaymentMethod,
-                      'updatedAt': DateTime.now().toIso8601String(),
-                    });
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  } catch (_) {
-                    if (!ctx.mounted) return;
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(content: Text(T.get('saveError'))),
-                    );
-                  }
-                },
+                onPressed: isReadingSlip || isSaving
+                    ? null
+                    : () async {
+                        final referenceNumber =
+                            referenceField.currentState?.value ??
+                                tx.referenceNumber;
+                        final amount =
+                            double.tryParse(amountText.replaceAll(',', ''));
+                        setStateDialog(() => isSaving = true);
+                        try {
+                          await _transactionsCollection.doc(tx.id).update({
+                            'title': title.trim(),
+                            'amount': amount != null && amount.isFinite
+                                ? amount
+                                : tx.amount,
+                            'date': transactionDate.toIso8601String(),
+                            'category': selectedCategory,
+                            'paymentMethod': selectedPaymentMethod,
+                            ...TransactionModel.referenceFields(
+                                referenceNumber),
+                            'updatedAt': DateTime.now().toIso8601String(),
+                          });
+                          if (!ctx.mounted) return;
+                          if (ModalRoute.of(ctx)?.isCurrent == true) {
+                            Navigator.pop(ctx);
+                          } else {
+                            setStateDialog(() => isSaving = false);
+                          }
+                        } catch (_) {
+                          if (!ctx.mounted) return;
+                          setStateDialog(() => isSaving = false);
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(T.get('saveError'))),
+                          );
+                        }
+                      },
                 child: Text(T.get('save')),
               ),
             ],
@@ -2723,68 +2735,140 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  Widget _buildReferenceNumberField(
+    GlobalKey<FormFieldState<String>> fieldKey, {
+    String initialValue = '',
+    bool enabled = true,
+  }) {
+    return TextFormField(
+      key: fieldKey,
+      initialValue: initialValue,
+      enabled: enabled,
+      textInputAction: TextInputAction.done,
+      autocorrect: false,
+      enableSuggestions: false,
+      decoration: InputDecoration(
+        labelText: T.get('transactionReference'),
+        prefixIcon: const Icon(Icons.tag_outlined),
+      ),
+    );
+  }
+
   Widget _buildDateTimeControls({
     required BuildContext pickerContext,
     required DateTime value,
     required ValueChanged<DateTime> onChanged,
+    bool showLabel = true,
+    bool enabled = true,
+    VoidCallback? onDateEdited,
+    VoidCallback? onTimeEdited,
   }) {
     final locale = languageNotifier.value == 'th' ? 'th' : 'en';
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        OutlinedButton.icon(
-          icon: const Icon(Icons.calendar_today_outlined),
-          label: Text(DateFormat('dd/MM/yyyy', locale).format(value)),
-          onPressed: () async {
-            final firstDate = DateTime(1900);
-            final lastDate = DateTime.now().add(const Duration(days: 365));
-            final initialDate = value.isBefore(firstDate)
-                ? firstDate
-                : value.isAfter(lastDate)
-                    ? lastDate
-                    : value;
-            final date = await showDatePicker(
-              context: pickerContext,
-              initialDate: initialDate,
-              firstDate: firstDate,
-              lastDate: lastDate,
-            );
-            if (date != null) {
-              onChanged(DateTime(
-                date.year,
-                date.month,
-                date.day,
-                value.hour,
-                value.minute,
-                value.second,
-                value.millisecond,
-                value.microsecond,
-              ));
-            }
-          },
+    final theme = Theme.of(pickerContext);
+    final buttonStyle = TextButton.styleFrom(
+      alignment: AlignmentDirectional.centerStart,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+    );
+
+    Future<void> pickDate() async {
+      final firstDate = DateTime(1900);
+      final lastDate = DateTime.now().add(const Duration(days: 365));
+      final initialDate = value.isBefore(firstDate)
+          ? firstDate
+          : value.isAfter(lastDate)
+              ? lastDate
+              : value;
+      final date = await showDatePicker(
+        context: pickerContext,
+        initialDate: initialDate,
+        firstDate: firstDate,
+        lastDate: lastDate,
+      );
+      if (date == null || !pickerContext.mounted) return;
+      onDateEdited?.call();
+      onChanged(DateTime(
+        date.year,
+        date.month,
+        date.day,
+        value.hour,
+        value.minute,
+        value.second,
+        value.millisecond,
+        value.microsecond,
+      ));
+    }
+
+    Future<void> pickTime() async {
+      final time = await showTimePicker(
+        context: pickerContext,
+        initialTime: TimeOfDay.fromDateTime(value),
+      );
+      if (time == null || !pickerContext.mounted) return;
+      onTimeEdited?.call();
+      onChanged(DateTime(
+        value.year,
+        value.month,
+        value.day,
+        time.hour,
+        time.minute,
+        value.second,
+        value.millisecond,
+        value.microsecond,
+      ));
+    }
+
+    Widget control(IconData icon, String label, VoidCallback onPressed) {
+      return TextButton(
+        style: buttonStyle,
+        onPressed: enabled ? onPressed : null,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 8),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(label),
+              ),
+            ),
+          ],
         ),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.access_time),
-          label: Text(DateFormat('HH:mm', locale).format(value)),
-          onPressed: () async {
-            final time = await showTimePicker(
-              context: pickerContext,
-              initialTime: TimeOfDay.fromDateTime(value),
-            );
-            if (time != null) {
-              onChanged(DateTime(
-                value.year,
-                value.month,
-                value.day,
-                time.hour,
-                time.minute,
-                value.second,
-                value.millisecond,
-                value.microsecond,
-              ));
-            }
-          },
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showLabel)
+          Text(
+            T.get('transactionDateTime'),
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        Row(
+          children: [
+            Flexible(
+              flex: 3,
+              child: control(
+                Icons.calendar_today_outlined,
+                DateFormat('dd/MM/yyyy', locale).format(value),
+                pickDate,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              flex: 2,
+              child: control(
+                Icons.schedule_outlined,
+                DateFormat('HH:mm', locale).format(value),
+                pickTime,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -3058,6 +3142,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             child: _buildDateTimeControls(
                               pickerContext: sheetContext,
                               value: selectedDateTime,
+                              showLabel: false,
                               onChanged: (value) => setSheetState(
                                 () => selectedDateTime = value,
                               ),
@@ -3202,26 +3287,159 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  void _showAddTransactionSheet(
-    BuildContext context, {
-    bool scanSlipOnOpen = false,
-  }) {
-    if (scanSlipOnOpen) {
-      unawaited(_showSlipInboxSheet());
-      return;
-    }
+  bool get _supportsSlipOcr =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
-    final titleController = TextEditingController();
-    final amountController = TextEditingController();
+  Future<XFile?> _chooseSlipImage(BuildContext context) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (sourceContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: Text(T.get('takeSlipPhoto')),
+              onTap: () => Navigator.pop(sourceContext, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(T.get('chooseSlipImage')),
+              onTap: () => Navigator.pop(sourceContext, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !context.mounted) return null;
+    return ImagePicker().pickImage(source: source);
+  }
+
+  Future<SlipOcrResult> _readSlipImage(XFile image) async {
+    final recognizer = TextRecognizer();
+    SlipOcrResult latinResult;
+    try {
+      latinResult =
+          SlipOcrParser.parse(await _recognizeText(recognizer, image.path));
+    } catch (_) {
+      final thaiResult = await _readThaiSlip(image.path);
+      if (thaiResult != null) return thaiResult;
+      rethrow;
+    } finally {
+      try {
+        await recognizer.close();
+      } catch (error) {
+        debugPrint('Could not close the slip text recognizer: $error');
+      }
+    }
+    return _enrichSlipWithThaiText(latinResult, image.path);
+  }
+
+  Future<SlipOcrResult?> _readThaiSlip(String imagePath) async {
+    try {
+      final text = await ThaiSlipOcr.recognize(imagePath);
+      if (text == null || text.trim().isEmpty) return null;
+      return SlipOcrParser.parse(text);
+    } catch (error) {
+      debugPrint('Could not read Thai slip text: $error');
+      return null;
+    }
+  }
+
+  Future<SlipOcrResult> _enrichSlipWithThaiText(
+    SlipOcrResult latin,
+    String imagePath,
+  ) async {
+    if (latin.title != null &&
+        latin.referenceNumber != null &&
+        latin.amount != null &&
+        latin.date != null &&
+        latin.hasTime) {
+      return latin;
+    }
+    final thai = await _readThaiSlip(imagePath);
+    return thai == null ? latin : _mergeSlipReadings(latin, thai);
+  }
+
+  SlipOcrResult _mergeSlipReadings(
+    SlipOcrResult primary,
+    SlipOcrResult fallback,
+  ) {
+    // Keep the date and clock from the same OCR pass.
+    final fallbackIsComplete = fallback.date != null && fallback.hasTime;
+    final dateSource =
+        primary.date == null || (!primary.hasTime && fallbackIsComplete)
+            ? fallback
+            : primary;
+    return SlipOcrResult(
+      title: primary.title ?? fallback.title,
+      amount: primary.amount ?? fallback.amount,
+      date: dateSource.date,
+      hasTime: dateSource.hasTime,
+      transactionNumber: primary.referenceNumber ?? fallback.referenceNumber,
+      looksLikeTransferSlip:
+          primary.looksLikeTransferSlip || fallback.looksLikeTransferSlip,
+    );
+  }
+
+  DateTime _dateTimeFromSlip(
+    SlipOcrResult result,
+    DateTime current, {
+    DateTime? fallback,
+    bool keepDate = false,
+    bool keepTime = false,
+  }) {
+    final baseline = fallback ?? current;
+    final date = keepDate ? current : result.date ?? baseline;
+    final slipClock = result.hasTime ? result.date : null;
+    final clock = keepTime ? current : slipClock ?? baseline;
+    if (identical(date, clock)) return date;
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      clock.hour,
+      clock.minute,
+      clock.second,
+      clock.millisecond,
+      clock.microsecond,
+    );
+  }
+
+  String _slipReviewMessage(
+    SlipOcrResult result, {
+    bool checkAmount = true,
+    bool checkReference = false,
+  }) {
+    final messages = [
+      if (checkAmount && result.amount == null) T.get('slipOcrNoAmount'),
+      if (checkReference && result.referenceNumber == null)
+        T.get('slipOcrNoReference'),
+      if (result.date == null || !result.hasTime) T.get('slipOcrCheckDateTime'),
+    ];
+    return messages.isEmpty ? T.get('slipOcrReview') : messages.join('\n');
+  }
+
+  void _showAddTransactionSheet(BuildContext context) {
+    final titleField = GlobalKey<FormFieldState<String>>();
+    final amountField = GlobalKey<FormFieldState<String>>();
+    final referenceField = GlobalKey<FormFieldState<String>>();
+    String? suggestedTitle;
+    String? suggestedReference;
     bool isExpense = true;
     bool isReadingSlip = false;
-    DateTime transactionDate = DateTime.now();
+    bool isSaving = false;
+    bool dateEdited = false;
+    bool timeEdited = false;
+    final initialDate = DateTime.now();
+    DateTime transactionDate = initialDate;
     Uint8List? slipImageBytes;
-    String? transactionNumber;
     String? slipMessage;
     String selectedCategory = _categoryIcons.keys.first;
     String selectedPaymentMethod = _paymentIcons.keys.first;
-    var startedSlipScan = false;
 
     showModalBottomSheet(
       context: context,
@@ -3232,96 +3450,64 @@ class _DashboardScreenState extends State<DashboardScreen>
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
             Future<void> readSlip() async {
-              if (kIsWeb ||
-                  (defaultTargetPlatform != TargetPlatform.android &&
-                      defaultTargetPlatform != TargetPlatform.iOS)) {
-                setModalState(() => slipMessage = T.get('slipOcrUnsupported'));
-                return;
-              }
-
-              final source = await showModalBottomSheet<ImageSource>(
-                context: context,
-                showDragHandle: true,
-                builder: (sourceContext) => SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.photo_camera_outlined),
-                        title: Text(T.get('takeSlipPhoto')),
-                        onTap: () =>
-                            Navigator.pop(sourceContext, ImageSource.camera),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.photo_library_outlined),
-                        title: Text(T.get('chooseSlipImage')),
-                        onTap: () =>
-                            Navigator.pop(sourceContext, ImageSource.gallery),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-              if (source == null || !ctx.mounted) return;
-
+              final previousMessage = slipMessage;
               setModalState(() {
                 isReadingSlip = true;
                 slipMessage = T.get('slipOcrProcessing');
               });
               try {
-                final image = await ImagePicker().pickImage(
-                  source: source,
-                  imageQuality: 100,
-                );
+                final image = await _chooseSlipImage(ctx);
                 if (image == null || !ctx.mounted) {
                   if (ctx.mounted) {
                     setModalState(() {
                       isReadingSlip = false;
-                      slipMessage = null;
+                      slipMessage = previousMessage;
                     });
                   }
                   return;
                 }
 
+                final result = await _readSlipImage(image);
                 final imageBytes = await image.readAsBytes();
-                final textRecognizer = TextRecognizer();
-                late final String recognizedText;
-                try {
-                  final result = await textRecognizer.processImage(
-                    InputImage.fromFilePath(image.path),
-                  );
-                  recognizedText = result.text;
-                } finally {
-                  await textRecognizer.close();
-                }
-                final result = SlipOcrParser.parse(recognizedText);
                 if (!ctx.mounted) return;
+                final currentTitle = titleField.currentState?.value ?? '';
+                if (currentTitle.trim().isEmpty ||
+                    currentTitle == suggestedTitle) {
+                  suggestedTitle = result.title;
+                  titleField.currentState?.didChange(suggestedTitle ?? '');
+                }
+                final currentReference =
+                    referenceField.currentState?.value ?? '';
+                if (currentReference.trim().isEmpty ||
+                    currentReference == suggestedReference) {
+                  suggestedReference = result.referenceNumber;
+                  referenceField.currentState
+                      ?.didChange(suggestedReference ?? '');
+                }
+                if (result.amount case final amount?) {
+                  amountField.currentState
+                      ?.didChange(amount.toStringAsFixed(2));
+                }
                 setModalState(() {
                   slipImageBytes = imageBytes;
-                  if (result.amount != null) {
-                    amountController.text = result.amount!.toStringAsFixed(2);
-                  }
-                  if (result.date != null) transactionDate = result.date!;
-                  transactionNumber = result.transactionNumber;
-                  slipMessage = result.amount == null
-                      ? T.get('slipOcrNoAmount')
-                      : T.get('slipOcrReview');
+                  transactionDate = _dateTimeFromSlip(
+                    result,
+                    transactionDate,
+                    fallback: initialDate,
+                    keepDate: dateEdited,
+                    keepTime: timeEdited,
+                  );
+                  slipMessage = _slipReviewMessage(result);
                   isReadingSlip = false;
                 });
               } catch (error) {
+                debugPrint('Could not read selected slip: $error');
                 if (!ctx.mounted) return;
                 setModalState(() {
                   isReadingSlip = false;
-                  slipMessage = '${T.get('slipOcrFailed')}: $error';
+                  slipMessage = T.get('slipOcrFailed');
                 });
               }
-            }
-
-            if (scanSlipOnOpen && !startedSlipScan) {
-              startedSlipScan = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (ctx.mounted) readSlip();
-              });
             }
 
             return Padding(
@@ -3336,15 +3522,19 @@ class _DashboardScreenState extends State<DashboardScreen>
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(T.get('addTransaction'),
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(
+                      T.get('addTransaction'),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
                     const SizedBox(height: 16),
-                    if (scanSlipOnOpen) ...[
-                      IconButton(
-                        tooltip: T.get('scanSlip'),
-                        onPressed: isReadingSlip ? null : readSlip,
+                    if (_supportsSlipOcr) ...[
+                      TextButton.icon(
+                        label: Text(T.get('scanSlip')),
+                        onPressed: isReadingSlip || isSaving ? null : readSlip,
                         icon: isReadingSlip
                             ? const SkeletonPulse(
                                 child: SkeletonBlock(
@@ -3365,8 +3555,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 .textTheme
                                 .bodySmall
                                 ?.copyWith(
-                                  color: slipMessage ==
-                                              T.get('slipOcrNoAmount') ||
+                                  color: slipMessage!.startsWith(
+                                              T.get('slipOcrNoAmount')) ||
                                           slipMessage!.startsWith(
                                               T.get('slipOcrFailed'))
                                       ? Theme.of(context).colorScheme.error
@@ -3381,6 +3571,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           borderRadius: BorderRadius.circular(12),
                           child: Image.memory(
                             slipImageBytes!,
+                            cacheWidth: 600,
                             height: 120,
                             width: double.infinity,
                             fit: BoxFit.contain,
@@ -3389,16 +3580,42 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ],
                       const SizedBox(height: 12),
                     ],
-                    TextField(
-                      controller: titleController,
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          T.get('typeLabel'),
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                        ChoiceChip(
+                          label: Text(T.get('expense')),
+                          selected: isExpense,
+                          onSelected: (_) =>
+                              setModalState(() => isExpense = true),
+                        ),
+                        ChoiceChip(
+                          label: Text(T.get('income')),
+                          selected: !isExpense,
+                          onSelected: (_) =>
+                              setModalState(() => isExpense = false),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      key: titleField,
+                      textInputAction: TextInputAction.next,
                       decoration: InputDecoration(
                         labelText: T.get('titleLabel'),
                         border: const OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
-                      controller: amountController,
+                    TextFormField(
+                      key: amountField,
+                      enabled: !isReadingSlip && !isSaving,
                       decoration: InputDecoration(
                         labelText: T.get('amountLabel'),
                         border: const OutlineInputBorder(),
@@ -3406,15 +3623,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
+                      textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(T.get('transactionDateTime')),
-                    ),
                     _buildDateTimeControls(
                       pickerContext: context,
                       value: transactionDate,
+                      enabled: !isReadingSlip && !isSaving,
+                      onDateEdited: () => dateEdited = true,
+                      onTimeEdited: () => timeEdited = true,
                       onChanged: (value) =>
                           setModalState(() => transactionDate = value),
                     ),
@@ -3435,24 +3652,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                           setModalState(() => selectedPaymentMethod = val!),
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        Text(T.get('typeLabel'),
-                            style: const TextStyle(fontSize: 16)),
-                        ChoiceChip(
-                            label: Text(T.get('expense')),
-                            selected: isExpense,
-                            onSelected: (_) =>
-                                setModalState(() => isExpense = true)),
-                        ChoiceChip(
-                            label: Text(T.get('income')),
-                            selected: !isExpense,
-                            onSelected: (_) =>
-                                setModalState(() => isExpense = false)),
-                      ],
+                    _buildReferenceNumberField(
+                      referenceField,
+                      enabled: !isReadingSlip && !isSaving,
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -3461,36 +3665,52 @@ class _DashboardScreenState extends State<DashboardScreen>
                             backgroundColor:
                                 Theme.of(context).colorScheme.primary,
                             foregroundColor: Colors.white),
-                        onPressed: () async {
-                          final title = titleController.text.trim().isEmpty
-                              ? ''
-                              : titleController.text.trim();
-                          if (title.isEmpty || amountController.text.isEmpty) {
-                            return;
-                          }
-                          final amount = double.tryParse(
-                            amountController.text.replaceAll(',', ''),
-                          );
-                          if (amount == null || amount <= 0) return;
-                          try {
-                            await _transactionsCollection.add({
-                              'title': title,
-                              'amount': amount,
-                              'date': transactionDate.toIso8601String(),
-                              'isExpense': isExpense ? 1 : 0,
-                              'category': selectedCategory,
-                              'paymentMethod': selectedPaymentMethod,
-                              if (transactionNumber != null)
-                                'transactionNo': transactionNumber,
-                            });
-                            if (ctx.mounted) Navigator.pop(ctx);
-                          } catch (_) {
-                            if (!ctx.mounted) return;
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              SnackBar(content: Text(T.get('saveError'))),
-                            );
-                          }
-                        },
+                        onPressed: isReadingSlip || isSaving
+                            ? null
+                            : () async {
+                                final trimmedTitle =
+                                    titleField.currentState?.value?.trim() ??
+                                        '';
+                                if (trimmedTitle.isEmpty) return;
+                                final amountText =
+                                    amountField.currentState?.value ?? '';
+                                final amount = double.tryParse(
+                                  amountText.replaceAll(',', ''),
+                                );
+                                if (amount == null ||
+                                    !amount.isFinite ||
+                                    amount <= 0) {
+                                  return;
+                                }
+                                final referenceNumber =
+                                    referenceField.currentState?.value ?? '';
+                                setModalState(() => isSaving = true);
+                                try {
+                                  await _transactionsCollection.add({
+                                    'title': trimmedTitle,
+                                    'amount': amount,
+                                    'date': transactionDate.toIso8601String(),
+                                    'isExpense': isExpense ? 1 : 0,
+                                    'category': selectedCategory,
+                                    'paymentMethod': selectedPaymentMethod,
+                                    ...TransactionModel.referenceFields(
+                                      referenceNumber,
+                                    ),
+                                  });
+                                  if (!ctx.mounted) return;
+                                  if (ModalRoute.of(ctx)?.isCurrent == true) {
+                                    Navigator.pop(ctx);
+                                  } else {
+                                    setModalState(() => isSaving = false);
+                                  }
+                                } catch (_) {
+                                  if (!ctx.mounted) return;
+                                  setModalState(() => isSaving = false);
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(content: Text(T.get('saveError'))),
+                                  );
+                                }
+                              },
                         child: Text(T.get('save'),
                             style: const TextStyle(fontSize: 16)),
                       ),
@@ -3550,7 +3770,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       DateFormat('yyyy-MM-dd').format(tx.date),
       tx.id,
       tx.invoiceNo,
-      tx.transactionNo,
+      tx.referenceNumber,
       tx.customerName,
       tx.taxId,
       tx.branchCode,
@@ -4149,77 +4369,113 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ? BorderSide(color: colors.primary.withValues(alpha: 0.6))
                 : BorderSide.none,
           ),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: isSelected && !isHidden
-                  ? colors.primary
-                  : mutedColor.withValues(alpha: 0.16),
-              child: Icon(
-                isSelected && !isHidden ? Icons.check_rounded : categoryIcon,
-                color: isHidden
-                    ? mutedColor
-                    : (isSelected ? colors.onPrimary : categoryColor),
-              ),
-            ),
-            title: Text(
-              tx.title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isHidden ? mutedColor : null,
-              ),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(formattedDate,
-                    style: isHidden ? TextStyle(color: mutedColor) : null),
-                const SizedBox(height: 2),
-                Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: isSelected && !isHidden
+                      ? colors.primary
+                      : mutedColor.withValues(alpha: 0.16),
+                  child: Icon(
+                    isSelected && !isHidden
+                        ? Icons.check_rounded
+                        : categoryIcon,
+                    color: isHidden
+                        ? mutedColor
+                        : (isSelected ? colors.onPrimary : categoryColor),
+                  ),
+                ),
+                title: Text(
+                  tx.title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isHidden ? mutedColor : null,
+                  ),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(categoryIcon,
-                        size: 14, color: isHidden ? mutedColor : categoryColor),
-                    const SizedBox(width: 4),
-                    Text(
-                      tx.category == 'transfer'
-                          ? T.get('transfer')
-                          : (isCategoryValid ? tx.category : tx.category),
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: isHidden ? mutedColor : categoryColor,
-                          fontWeight: FontWeight.bold),
-                    ),
-                    const Text(' • '),
-                    Icon(paymentIcon,
-                        size: 14, color: isHidden ? mutedColor : paymentColor),
-                    const SizedBox(width: 4),
-                    Text(
-                      tx.paymentMethod,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: isHidden ? mutedColor : paymentColor),
+                    Text(formattedDate,
+                        style: isHidden ? TextStyle(color: mutedColor) : null),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(categoryIcon,
+                            size: 14,
+                            color: isHidden ? mutedColor : categoryColor),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            tx.category == 'transfer'
+                                ? T.get('transfer')
+                                : tx.category,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: isHidden ? mutedColor : categoryColor,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const Text(' • '),
+                        Icon(paymentIcon,
+                            size: 14,
+                            color: isHidden ? mutedColor : paymentColor),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            tx.paymentMethod,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: isHidden ? mutedColor : paymentColor),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  tx.isExpense ? Icons.arrow_downward : Icons.arrow_upward,
-                  color: isHidden ? mutedColor : amountColor,
-                  size: 18,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '${tx.isExpense ? '-' : '+'}$formattedAmount ฿',
-                  style: TextStyle(
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      tx.isExpense ? Icons.arrow_downward : Icons.arrow_upward,
                       color: isHidden ? mutedColor : amountColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${tx.isExpense ? '-' : '+'}$formattedAmount ฿',
+                      style: TextStyle(
+                          color: isHidden ? mutedColor : amountColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: DefaultTextStyle.merge(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: isHidden ? mutedColor : colors.onSurfaceVariant,
+                      ),
+                  child: Wrap(
+                    spacing: 16,
+                    runSpacing: 4,
+                    children: [
+                      Text('${T.get('firebaseDocumentId')} ${tx.id}'),
+                      if (tx.referenceNumber.isNotEmpty)
+                        Text(
+                          '${T.get('transactionReferenceShort')} ${tx.referenceNumber}',
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -4554,76 +4810,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildDashboardSkeleton() {
-    final skeletonColor = Theme.of(context).colorScheme.surfaceContainerHighest;
-    Widget block({double? width, required double height, double radius = 8}) {
-      return Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          color: skeletonColor,
-          borderRadius: BorderRadius.circular(radius),
-        ),
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-      children: [
-        Center(child: block(width: 176, height: 176, radius: 88)),
-        const SizedBox(height: 24),
-        Row(
-          children: [
-            for (var index = 0; index < 3; index++) ...[
-              if (index > 0) const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    block(height: 12, width: 62),
-                    const SizedBox(height: 10),
-                    block(height: 22),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 28),
-        block(height: 18, width: 150),
-        const SizedBox(height: 12),
-        for (var index = 0; index < 5; index++) ...[
-          Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: skeletonColor.withValues(alpha: 0.45),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                block(width: 42, height: 42, radius: 21),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      block(height: 14, width: 132),
-                      const SizedBox(height: 8),
-                      block(height: 11, width: 92),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                block(height: 16, width: 68),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<String>(
@@ -4810,10 +4996,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       FloatingActionButton(
                         heroTag: 'addFromSlipFab',
                         tooltip: T.get('scanSlip'),
-                        onPressed: () => _showAddTransactionSheet(
-                          context,
-                          scanSlipOnOpen: true,
-                        ),
+                        onPressed: _showSlipInboxSheet,
                         child: const Icon(Icons.document_scanner_outlined),
                       ),
                       const SizedBox(height: 12),

@@ -1,0 +1,19 @@
+Offline slip OCR
+
+The unmodified English and Thai language models were obtained from
+tesseract-ocr/tessdata_fast release 4.1.0:
+https://github.com/tesseract-ocr/tessdata_fast/tree/4.1.0
+
+SHA-256:
+eng.traineddata  7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+tha.traineddata  294227cc2d1292b0acb28d61d4115c88252b96d466ca90b417cf4cf0c67bf07c
+
+The models, Tesseract OCR, and Tesseract4Android are licensed under the
+Apache License, Version 2.0. See the LICENSE file in this directory.
+
+Tesseract4Android 4.9.0: https://github.com/adaptech-cz/Tesseract4Android/tree/4.9.0
+Tesseract OCR 5.5.1: https://github.com/tesseract-ocr/tesseract/tree/5.5.1
+
+The Android OCR library also includes Leptonica, libpng, and the JPEG
+software of the Independent JPEG Group. Their notices are included in the
+leptonica-license.txt, libpng-license.txt, and libjpeg-readme.txt files.

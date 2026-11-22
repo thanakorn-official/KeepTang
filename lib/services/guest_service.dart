@@ -3,9 +3,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// โหมดผู้ใช้ทั่วไป (Guest): ไม่มีระบบบัญชี — แต่ละเครื่องจะได้ ID ที่สุ่มขึ้น
-/// ไม่ซ้ำกับผู้ใช้อื่น (guestId) เป็นที่อยู่ของพื้นที่ข้อมูลใน Firestore
-/// ส่วน "ชื่อผู้ใช้" เป็นเพียงชื่อแสดงผล ตั้ง/เปลี่ยนได้อิสระโดยไม่กระทบข้อมูล
+/// Guest ID ระบุพื้นที่ข้อมูลใน Firestore ส่วนชื่อผู้ใช้เป็นชื่อแสดงผล
 class GuestService {
   static const _idKey = 'guest_id';
   static const _usernameKey = 'guest_username';
@@ -32,78 +30,103 @@ class GuestService {
   static String? _guestId;
   static String? _username;
 
-  /// ID พื้นที่ข้อมูลที่สุ่มไม่ซ้ำกัน (ว่างเมื่อยังไม่ผ่าน ensureGuest)
   static String get guestId => _guestId ?? '';
 
   static String? get username => _username;
 
-  static bool get hasUsername => (_username ?? '').trim().isNotEmpty;
+  static bool get hasActiveGuest =>
+      _guestId != null && (_username ?? '').isNotEmpty;
 
-  /// โหลด Guest ของเครื่องนี้ ถ้ายังไม่มีจะสุ่ม ID ใหม่ที่ไม่ซ้ำกับผู้อื่น
-  /// และสำหรับเครื่องที่อัปเกรดมาจากเวอร์ชันที่ใช้ชื่อผู้ใช้เป็น ID
-  /// จะคัดลอกข้อมูลเดิมมาที่ ID ใหม่ให้เอง
-  static Future<void> ensureGuest() async {
-    final prefs = await SharedPreferences.getInstance();
-    _guestId = prefs.getString(_idKey);
-    _username = prefs.getString(_usernameKey);
+  static CollectionReference<Map<String, dynamic>> get _guests =>
+      FirebaseFirestore.instance.collection('guests');
 
-    if (_guestId == null || _guestId!.isEmpty) {
-      final fromOldVersion = hasUsername;
-      _guestId = await _generateUniqueGuestId();
-      await prefs.setString(_idKey, _guestId!);
-      // เครื่องใหม่ล้วนไม่ต้องยุ่งกับข้อมูลรูปแบบเก่าเด็ดขาด
-      await prefs.setBool(_legacyUpgradedKey, fromOldVersion);
-      await prefs.setBool(_legacyMigratedKey, !fromOldVersion);
-      await _touchGuestDoc();
+  static DocumentReference<Map<String, dynamic>> get activeGuestDocument {
+    if (!hasActiveGuest) {
+      throw StateError('Create or restore a Guest ID first.');
     }
-
-    if (prefs.getBool(_legacyUpgradedKey) == true &&
-        prefs.getBool(_legacyMigratedKey) != true &&
-        hasUsername) {
-      await _migrateLegacyGuestData(prefs);
-    }
+    return _guests.doc(guestId);
   }
 
-  /// สุ่ม ID: G- + เวลา (base36) + 4 ตัวอักษรสุ่ม แล้วตรวจกับ Firestore
-  /// ว่าไม่มีใครใช้ก่อน — ถ้าออฟไลน์ให้ใช้ค่าที่สุ่มได้เลย
-  /// (โอกาสชนกันกับผู้อื่นแทบเป็นศูนย์)
-  static Future<String> _generateUniqueGuestId() async {
-    String candidate() {
-      final ts = DateTime.now()
-          .millisecondsSinceEpoch
-          .toRadixString(36)
-          .padLeft(8, '0');
-      final rnd = Random.secure();
-      final suffix =
-          List.generate(4, (_) => _idAlphabet[rnd.nextInt(_idAlphabet.length)])
-              .join();
-      return 'G-$ts$suffix';
-    }
+  static bool _isValidGuestId(String id) =>
+      id.isNotEmpty &&
+      id != '.' &&
+      id != '..' &&
+      !id.contains('/') &&
+      !(id.startsWith('__') && id.endsWith('__'));
 
-    var id = candidate();
+  /// Loads only an existing local session. A missing ID stays missing.
+  static Future<void> loadSavedGuest() async {
+    final prefs = await SharedPreferences.getInstance();
+    final id = prefs.getString(_idKey)?.trim() ?? '';
+    _guestId = _isValidGuestId(id) ? id : null;
+    _username = _guestId == null ? null : prefs.getString(_usernameKey)?.trim();
+  }
+
+  static String _newGuestId() {
+    final timestamp =
+        DateTime.now().millisecondsSinceEpoch.toRadixString(36).padLeft(8, '0');
+    final random = Random.secure();
+    final suffix = List.generate(
+      4,
+      (_) => _idAlphabet[random.nextInt(_idAlphabet.length)],
+    ).join();
+    return 'G-$timestamp$suffix';
+  }
+
+  /// Creates a cloud account only after the user submits the create form.
+  static Future<void> createGuest(String name) async {
+    final displayName = name.trim();
+    if (displayName.isEmpty || hasActiveGuest) {
+      throw StateError('A new Guest ID requires a name and no active session.');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final firestore = FirebaseFirestore.instance;
     for (var attempt = 0; attempt < 3; attempt++) {
-      try {
-        final doc = await FirebaseFirestore.instance
-            .collection('guests')
-            .doc(id)
-            .get()
-            .timeout(const Duration(seconds: 3));
-        if (!doc.exists) return id;
-        id = candidate();
-      } catch (_) {
-        return id;
+      final doc = _guests.doc(_newGuestId());
+      final created = await firestore.runTransaction<bool>((transaction) async {
+        if ((await transaction.get(doc)).exists) return false;
+        transaction.set(doc, {
+          'username': displayName,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        return true;
+      }, timeout: const Duration(seconds: 12));
+      if (!created) continue;
+
+      await _saveLocalGuest(prefs, id: doc.id, name: displayName);
+      return;
+    }
+    throw StateError('Could not create an unused Guest ID.');
+  }
+
+  static Future<void> _saveLocalGuest(
+    SharedPreferences prefs, {
+    required String id,
+    required String name,
+  }) async {
+    // A newly created or explicitly restored account is never a legacy
+    // migration target from a previous local session.
+    await prefs.remove(_legacyUpgradedKey);
+    await prefs.remove(_legacyMigratedKey);
+    if (_guestId != id) {
+      for (final key in _customSettingKeys) {
+        await prefs.remove(key);
       }
     }
-    return id;
+    await prefs.setString(_usernameKey, name);
+    await prefs.setString(_idKey, id);
+    _username = name;
+    _guestId = id;
   }
 
-  static Future<void> _touchGuestDoc() async {
-    try {
-      await FirebaseFirestore.instance.collection('guests').doc(_guestId).set({
-        'username': username ?? '',
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (_) {}
+  static Future<void> finishPendingLegacyMigration() async {
+    if (!hasActiveGuest) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (hasActiveGuest &&
+        prefs.getBool(_legacyUpgradedKey) == true &&
+        prefs.getBool(_legacyMigratedKey) != true) {
+      await _migrateLegacyGuestData(prefs);
+    }
   }
 
   /// คัดลอกรายการจากพื้นที่รูปแบบเก่า guests/{ชื่อผู้ใช้}/transactions
@@ -111,16 +134,22 @@ class GuestService {
   /// (คัดลอกเท่านั้น ไม่ลบของเดิม; ถ้าล้มเหลว เช่น ออฟไลน์ จะลองใหม่เปิดครั้งถัดไป)
   static Future<void> _migrateLegacyGuestData(SharedPreferences prefs) async {
     final legacyId = username!.trim().replaceAll('/', '-');
+    if (!_isValidGuestId(legacyId)) return;
     try {
       final fs = FirebaseFirestore.instance;
-      final guestDoc = fs.collection('guests').doc(_guestId);
-      final existing = await guestDoc.collection('transactions').limit(1).get();
+      final guestDoc = activeGuestDocument;
+      final existing = await guestDoc
+          .collection('transactions')
+          .limit(1)
+          .get()
+          .timeout(const Duration(seconds: 8));
       if (existing.docs.isEmpty) {
         final legacy = await fs
             .collection('guests')
             .doc(legacyId)
             .collection('transactions')
-            .get();
+            .get()
+            .timeout(const Duration(seconds: 8));
         final docs = legacy.docs;
         for (var i = 0; i < docs.length; i += 400) {
           final batch = fs.batch();
@@ -128,7 +157,7 @@ class GuestService {
             batch.set(
                 guestDoc.collection('transactions').doc(doc.id), doc.data());
           }
-          await batch.commit();
+          await batch.commit().timeout(const Duration(seconds: 8));
         }
       }
       await prefs.setBool(_legacyMigratedKey, true);
@@ -138,63 +167,66 @@ class GuestService {
   /// ตั้งชื่อผู้ใช้ (ชื่อแสดงผลเท่านั้น ไม่กระทบพื้นที่ข้อมูล)
   static Future<void> setUsername(String name) async {
     final trimmed = name.trim();
+    if (trimmed.isEmpty || !hasActiveGuest) return;
+    final doc = activeGuestDocument;
     _username = trimmed;
     final prefs = await SharedPreferences.getInstance();
+    if (!hasActiveGuest || doc.id != guestId) return;
     await prefs.setString(_usernameKey, trimmed);
     try {
-      await FirebaseFirestore.instance
-          .collection('guests')
-          .doc(_guestId)
-          .set({'username': trimmed}, SetOptions(merge: true));
+      await doc.set({'username': trimmed}, SetOptions(merge: true));
     } catch (_) {}
   }
 
-  /// กำหนด Guest ID ด้วยตัวเอง (สำหรับกู้คืนข้อมูลเดิม)
-  static Future<void> setCustomGuestId(String customId) async {
-    final trimmed = customId.trim();
-    if (trimmed.isEmpty) return;
-    _guestId = trimmed;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_idKey, trimmed);
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('guests')
-          .doc(trimmed)
-          .get();
-      if (doc.exists) {
-        final savedName = (doc.data()?['username'] as String? ?? '').trim();
-        if (savedName.isNotEmpty) {
-          _username = savedName;
-          await prefs.setString(_usernameKey, savedName);
-        }
-      } else {
-        await _touchGuestDoc();
-      }
-    } catch (_) {
-      await _touchGuestDoc();
+  /// Verifies an existing account with Firestore before changing the local
+  /// session. A missing ID does not create a new cloud document.
+  static Future<bool> restoreGuest(String input) async {
+    final id = input.trim();
+    if (!_isValidGuestId(id)) return false;
+    const options = GetOptions(source: Source.server);
+    const timeout = Duration(seconds: 8);
+    final guest = _guests.doc(id);
+    final profile = await guest.get(options).timeout(timeout);
+    if (!profile.exists) {
+      // Firestore allows an existing subcollection without a parent document.
+      final existingData = await Future.wait([
+        _preferencesFor(guest).get(options).then((doc) => doc.exists),
+        guest
+            .collection('transactions')
+            .limit(1)
+            .get(options)
+            .then((query) => query.docs.isNotEmpty),
+      ]).timeout(timeout);
+      if (!existingData.contains(true)) return false;
     }
+
+    final savedName = (profile.data()?['username'] as String?)?.trim() ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    await _saveLocalGuest(prefs,
+        id: id, name: savedName.isEmpty ? id : savedName);
+    return true;
   }
 
-  static DocumentReference<Map<String, dynamic>> get _preferencesDocument =>
-      FirebaseFirestore.instance
-          .collection('guests')
-          .doc(guestId)
-          .collection('settings')
-          .doc('preferences');
+  static DocumentReference<Map<String, dynamic>> _preferencesFor(
+    DocumentReference<Map<String, dynamic>> guest,
+  ) =>
+      guest.collection('settings').doc('preferences');
 
   /// Saves local category and payment preferences for the active Guest ID.
   static Future<void> saveCustomSettings() async {
-    if (guestId.isEmpty) return;
+    if (!hasActiveGuest) return;
+    final guest = activeGuestDocument;
     final prefs = await SharedPreferences.getInstance();
+    if (!hasActiveGuest || guest.id != guestId) return;
     final values = <String, String>{
       for (final key in _customSettingKeys)
         if (prefs.getString(key) != null) key: prefs.getString(key)!,
     };
     try {
-      await _preferencesDocument.set({
+      await _preferencesFor(guest).set({
         'values': values,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }).timeout(const Duration(seconds: 8));
     } catch (_) {
       // Local preferences remain available and will be synced on a later save.
     }
@@ -202,13 +234,17 @@ class GuestService {
 
   /// Restores the active Guest's category and payment preferences locally.
   static Future<void> restoreCustomSettings() async {
-    if (guestId.isEmpty) return;
+    if (!hasActiveGuest) return;
+    final guest = activeGuestDocument;
     final prefs = await SharedPreferences.getInstance();
     try {
-      final doc = await _preferencesDocument.get();
+      final doc = await _preferencesFor(guest)
+          .get()
+          .timeout(const Duration(seconds: 8));
       final values = doc.data()?['values'];
       if (values is Map) {
         for (final key in _customSettingKeys) {
+          if (!hasActiveGuest || guest.id != guestId) return;
           final value = values[key];
           if (value is String) {
             await prefs.setString(key, value);
@@ -216,8 +252,6 @@ class GuestService {
             await prefs.remove(key);
           }
         }
-      } else if (!doc.exists) {
-        await saveCustomSettings();
       }
     } catch (_) {
       // Offline users continue using the locally cached preferences.

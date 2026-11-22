@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:csv/csv.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -11,11 +10,8 @@ import 'guest_service.dart';
 
 class ExportService {
   static Future<void> exportCsv(DateTime selectedMonth, String type) async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('guests')
-        .doc(GuestService.guestId)
-        .collection('transactions')
-        .get();
+    final snapshot =
+        await GuestService.activeGuestDocument.collection('transactions').get();
     final transactions = snapshot.docs
         .map((doc) => TransactionModel.fromMap({...doc.data(), 'id': doc.id}))
         .where((tx) =>
