@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.media.ExifInterface
 import android.os.Build
 import com.googlecode.tesseract.android.TessBaseAPI
@@ -20,7 +21,7 @@ import kotlin.math.roundToInt
 internal class ThaiSlipTextRecognizer(private val context: Context) {
     companion object {
         private const val CHANNEL = "keeptang/slip_ocr"
-        private const val MAX_IMAGE_SIDE = 2200
+        private const val MAX_IMAGE_SIDE = 2600
         private val modelCopyLock = Any()
 
         fun register(context: Context, messenger: BinaryMessenger): MethodChannel {
@@ -54,7 +55,7 @@ internal class ThaiSlipTextRecognizer(private val context: Context) {
         }
     }
 
-    private fun recognize(file: File): String? {
+    private fun recognize(file: File): List<String>? {
         val dataDirectory = prepareModelFiles()
         val image = decodeImage(file) ?: return null
         try {
@@ -65,13 +66,57 @@ internal class ThaiSlipTextRecognizer(private val context: Context) {
                 }
                 tesseract.setPageSegMode(TessBaseAPI.PageSegMode.PSM_AUTO)
                 tesseract.setImage(image)
-                return tesseract.getUTF8Text()?.takeIf { it.isNotBlank() }
+                val text = tesseract.getUTF8Text()?.trim().orEmpty()
+                if (text.isEmpty()) return null
+                val rows = readAlignedRows(tesseract)
+                return if (rows.isNotBlank() && rows != text) listOf(rows, text) else listOf(text)
             } finally {
                 tesseract.recycle()
             }
         } finally {
             image.recycle()
         }
+    }
+
+    private data class TextLine(val text: String, val bounds: Rect)
+
+    private fun readAlignedRows(tesseract: TessBaseAPI): String {
+        val iterator = tesseract.getResultIterator() ?: return ""
+        val level = TessBaseAPI.PageIteratorLevel.RIL_TEXTLINE
+        val lines = mutableListOf<TextLine>()
+        try {
+            iterator.begin()
+            do {
+                val text = iterator.getUTF8Text(level)?.trim().orEmpty()
+                val bounds = iterator.getBoundingRect(level)
+                if (text.isNotEmpty() && bounds != null && !bounds.isEmpty) {
+                    lines.add(TextLine(text, bounds))
+                }
+            } while (iterator.next(level))
+        } finally {
+            iterator.delete()
+        }
+
+        // Receipts often put labels and values in separate columns. OCR may
+        // return the whole label column before the first value.
+        val rows = mutableListOf<MutableList<TextLine>>()
+        for (line in lines.sortedBy { it.bounds.centerY() }) {
+            val currentRow = rows.lastOrNull()
+            if (currentRow != null && currentRow.all { isSameRow(it.bounds, line.bounds) }) {
+                currentRow.add(line)
+            } else {
+                rows.add(mutableListOf(line))
+            }
+        }
+        return rows.joinToString("\n") { row ->
+            row.sortedBy { it.bounds.left }.joinToString(" ") { it.text }
+        }
+    }
+
+    private fun isSameRow(first: Rect, second: Rect): Boolean {
+        val overlap = minOf(first.bottom, second.bottom) - max(first.top, second.top)
+        return overlap * 2 >= minOf(first.height(), second.height()) &&
+            (first.right <= second.left || second.right <= first.left)
     }
 
     private fun prepareModelFiles(): File = synchronized(modelCopyLock) {

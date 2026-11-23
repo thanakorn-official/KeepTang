@@ -267,10 +267,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           .textTheme
                                           .bodySmall),
                                 Text(
-                                  '${T.get('firebaseDocumentId')} ${doc.id}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                                Text(
                                     '${T.get('deletedAt')} ${DateFormat('dd/MM/yyyy HH:mm').format(deletedAt)}',
                                     style: Theme.of(context)
                                         .textTheme

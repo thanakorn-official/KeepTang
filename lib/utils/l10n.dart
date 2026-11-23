@@ -123,6 +123,7 @@ class T {
       'transactionReferenceShort': 'เลขอ้างอิง',
       'readSlipDateTimeAndReference': 'อ่านวันเวลาและเลขอ้างอิงจากสลิป',
       'slipOcrNoReference': 'ไม่พบเลขอ้างอิงในสลิป กรอกเองได้',
+      'slipOcrTruncatedReference': 'เลขอ้างอิงเห็นไม่ครบ โปรดตรวจสอบกับต้นฉบับ',
       'firebaseDocumentId': 'รหัส Firebase',
       'moveToTrash': 'ย้ายไปถังขยะ',
       'addCustomCategory': '+ เพิ่มหมวดหมู่ใหม่...',
@@ -323,6 +324,8 @@ class T {
       'transactionReferenceShort': 'Reference',
       'readSlipDateTimeAndReference': 'Read date, time and reference from slip',
       'slipOcrNoReference': 'No reference found. You can enter it manually.',
+      'slipOcrTruncatedReference':
+          'Only part of the reference is visible. Check the original receipt.',
       'firebaseDocumentId': 'Firebase ID',
       'moveToTrash': 'Move to trash',
       'addCustomCategory': '+ Add new category...',

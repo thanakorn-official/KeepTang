@@ -258,10 +258,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (latinResult.looksLikeTransferSlip) {
           result = await _enrichSlipWithThaiText(latinResult, image.path);
         } else if (latinResult.amount != null &&
-            (latinResult.date != null || latinResult.referenceNumber != null)) {
+            (latinResult.hasSlipHint ||
+                latinResult.date != null ||
+                latinResult.referenceNumber != null)) {
           final thai = await _readThaiSlip(image.path);
           if (thai == null || !thai.looksLikeTransferSlip) continue;
-          result = _mergeSlipReadings(thai, latinResult);
+          result = SlipOcrParser.merge(thai, latinResult);
         } else {
           continue;
         }
@@ -885,6 +887,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               itemCount: _slipDrafts.length,
                               itemBuilder: (context, index) {
                                 final draft = _slipDrafts[index];
+                                final datePattern = draft.date.second == 0
+                                    ? 'dd/MM/yyyy HH:mm'
+                                    : 'dd/MM/yyyy HH:mm:ss';
+                                final formattedDate = DateFormat(
+                                  datePattern,
+                                  languageNotifier.value,
+                                ).format(draft.date);
                                 return Card(
                                   child: ListTile(
                                     leading: SizedBox(
@@ -969,7 +978,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     subtitle: Text(
-                                      '${draft.amount == null ? T.get('slipInboxMissingAmount') : NumberFormat('#,##0.00').format(draft.amount)}  •  ${DateFormat('dd/MM/yyyy HH:mm', languageNotifier.value).format(draft.date)}'
+                                      '${draft.amount == null ? T.get('slipInboxMissingAmount') : NumberFormat('#,##0.00').format(draft.amount)}  •  $formattedDate'
                                       '${draft.referenceNumber?.isNotEmpty == true ? '\n${T.get('transactionReferenceShort')} ${draft.referenceNumber}' : ''}',
                                     ),
                                     trailing: Wrap(
@@ -2579,8 +2588,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
               if (image == null || !ctx.mounted) return;
               final result = await _readSlipImage(image);
               if (!ctx.mounted) return;
+              final field = referenceField.currentState;
+              final currentNumber = field?.value?.trim() ?? '';
               if (result.referenceNumber case final number?) {
-                referenceField.currentState?.didChange(number);
+                if (!result.hasTruncatedReference ||
+                    currentNumber.isEmpty ||
+                    currentNumber.endsWith('…')) {
+                  field?.didChange(number);
+                }
               }
               transactionDate = _dateTimeFromSlip(
                 result,
@@ -2592,7 +2607,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               message = _slipReviewMessage(
                 result,
                 checkAmount: false,
-                checkReference: true,
               );
             } catch (error) {
               debugPrint('Could not read slip details: $error');
@@ -2864,7 +2878,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               flex: 2,
               child: control(
                 Icons.schedule_outlined,
-                DateFormat('HH:mm', locale).format(value),
+                DateFormat(value.second == 0 ? 'HH:mm' : 'HH:mm:ss', locale)
+                    .format(value),
                 pickTime,
               ),
             ),
@@ -3340,9 +3355,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<SlipOcrResult?> _readThaiSlip(String imagePath) async {
     try {
-      final text = await ThaiSlipOcr.recognize(imagePath);
-      if (text == null || text.trim().isEmpty) return null;
-      return SlipOcrParser.parse(text);
+      final readings = await ThaiSlipOcr.recognize(imagePath);
+      if (readings == null || readings.isEmpty) return null;
+      return readings.map(SlipOcrParser.parse).reduce(SlipOcrParser.merge);
     } catch (error) {
       debugPrint('Could not read Thai slip text: $error');
       return null;
@@ -3354,35 +3369,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String imagePath,
   ) async {
     if (latin.title != null &&
-        latin.referenceNumber != null &&
+        latin.referenceConfidence >= 4 &&
+        !latin.hasTruncatedReference &&
         latin.amount != null &&
         latin.date != null &&
         latin.hasTime) {
       return latin;
     }
     final thai = await _readThaiSlip(imagePath);
-    return thai == null ? latin : _mergeSlipReadings(latin, thai);
-  }
-
-  SlipOcrResult _mergeSlipReadings(
-    SlipOcrResult primary,
-    SlipOcrResult fallback,
-  ) {
-    // Keep the date and clock from the same OCR pass.
-    final fallbackIsComplete = fallback.date != null && fallback.hasTime;
-    final dateSource =
-        primary.date == null || (!primary.hasTime && fallbackIsComplete)
-            ? fallback
-            : primary;
-    return SlipOcrResult(
-      title: primary.title ?? fallback.title,
-      amount: primary.amount ?? fallback.amount,
-      date: dateSource.date,
-      hasTime: dateSource.hasTime,
-      transactionNumber: primary.referenceNumber ?? fallback.referenceNumber,
-      looksLikeTransferSlip:
-          primary.looksLikeTransferSlip || fallback.looksLikeTransferSlip,
-    );
+    return thai == null ? latin : SlipOcrParser.merge(thai, latin);
   }
 
   DateTime _dateTimeFromSlip(
@@ -3412,12 +3407,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _slipReviewMessage(
     SlipOcrResult result, {
     bool checkAmount = true,
-    bool checkReference = false,
   }) {
     final messages = [
       if (checkAmount && result.amount == null) T.get('slipOcrNoAmount'),
-      if (checkReference && result.referenceNumber == null)
-        T.get('slipOcrNoReference'),
+      if (result.hasTruncatedReference) T.get('slipOcrTruncatedReference'),
+      if (result.referenceNumber == null) T.get('slipOcrNoReference'),
       if (result.date == null || !result.hasTime) T.get('slipOcrCheckDateTime'),
     ];
     return messages.isEmpty ? T.get('slipOcrReview') : messages.join('\n');
@@ -4454,25 +4448,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           fontSize: 16),
                     ),
                   ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: DefaultTextStyle.merge(
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: isHidden ? mutedColor : colors.onSurfaceVariant,
-                      ),
-                  child: Wrap(
-                    spacing: 16,
-                    runSpacing: 4,
-                    children: [
-                      Text('${T.get('firebaseDocumentId')} ${tx.id}'),
-                      if (tx.referenceNumber.isNotEmpty)
-                        Text(
-                          '${T.get('transactionReferenceShort')} ${tx.referenceNumber}',
-                        ),
-                    ],
-                  ),
                 ),
               ),
             ],

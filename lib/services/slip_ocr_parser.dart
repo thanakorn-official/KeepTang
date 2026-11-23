@@ -6,6 +6,9 @@ class SlipOcrResult {
     this.hasTime = false,
     this.transactionNumber,
     this.looksLikeTransferSlip = false,
+    this.hasSlipHint = false,
+    this.referenceConfidence = 0,
+    this.timestampConfidence = 0,
   });
 
   final String? title;
@@ -14,11 +17,54 @@ class SlipOcrResult {
   final bool hasTime;
   final String? transactionNumber;
   final bool looksLikeTransferSlip;
+  final bool hasSlipHint;
+  final int referenceConfidence;
+  final int timestampConfidence;
 
   String? get referenceNumber => transactionNumber;
+  bool get hasTruncatedReference => transactionNumber?.endsWith('…') ?? false;
 }
 
 class SlipOcrParser {
+  static SlipOcrResult merge(SlipOcrResult primary, SlipOcrResult fallback) {
+    // A complete timestamp takes priority. Keep the date and time together.
+    final dateSource = fallback.date != null &&
+            (primary.date == null ||
+                (fallback.hasTime && !primary.hasTime) ||
+                (fallback.hasTime == primary.hasTime &&
+                    fallback.timestampConfidence > primary.timestampConfidence))
+        ? fallback
+        : primary;
+    final primaryNumber = primary.referenceNumber;
+    final fallbackNumber = fallback.referenceNumber;
+    final completesVisiblePrefix = primary.hasTruncatedReference &&
+        fallbackNumber != null &&
+        !fallback.hasTruncatedReference &&
+        fallbackNumber.toLowerCase().startsWith(primaryNumber!
+            .substring(0, primaryNumber.length - 1)
+            .toLowerCase());
+    final referenceSource = fallbackNumber != null &&
+            (primaryNumber == null ||
+                fallback.referenceConfidence > primary.referenceConfidence ||
+                (fallback.referenceConfidence == primary.referenceConfidence &&
+                    completesVisiblePrefix))
+        ? fallback
+        : primary;
+
+    return SlipOcrResult(
+      title: primary.title ?? fallback.title,
+      amount: primary.amount ?? fallback.amount,
+      date: dateSource.date,
+      hasTime: dateSource.hasTime,
+      timestampConfidence: dateSource.timestampConfidence,
+      transactionNumber: referenceSource.referenceNumber,
+      referenceConfidence: referenceSource.referenceConfidence,
+      looksLikeTransferSlip:
+          primary.looksLikeTransferSlip || fallback.looksLikeTransferSlip,
+      hasSlipHint: primary.hasSlipHint || fallback.hasSlipHint,
+    );
+  }
+
   static final _amountPattern =
       RegExp(r'(?<!\d)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?(?!\d)');
   static const _clockPeriod =
@@ -37,8 +83,9 @@ class SlipOcrParser {
     caseSensitive: false,
   );
   static final _amountCue = RegExp(
-      r'\b(?:amount|total)\b|\btransfer(?=\s*(?:[:=]|\d))|ยอดเงิน|จำนวนเงิน|ยอดโอน|จำนวน',
+      r'\b(?:amount|total)\b|\btransfer(?=\s*(?:[:=]|\d))|ยอดเงิน|จำนวนเงิน|ยอดโอน|ยอดรวม|จำนวน',
       caseSensitive: false);
+  static final _paidAmountCue = RegExp(r'จำนวน\s*เงิน\s*ที่\s*ชำระ');
   static final _bahtCurrencyCue = RegExp(
     r'\bTHB\b|\bbaht\b|฿|บาท',
     caseSensitive: false,
@@ -49,7 +96,7 @@ class SlipOcrParser {
   );
   // OCR may insert spaces even inside a Thai word or split off a vowel mark.
   static const _thaiReferencePrefix =
-      r'(?:หมาย\s*เลข|เลข(?:\s*ที่)?|ร\s*ห\s*ั?\s*ส)\s*';
+      r'(?:หมาย\s*เลข|เลข(?:\s*ท\s*ี\s*่?)?|ร\s*ห\s*ั?\s*ส)\s*';
   static const _thaiReferenceWord = r'อ\s*้?\s*า\s*ง\s*อ\s*ิ?\s*ง';
   static const _thaiTransactionScope =
       r'(?:ของ\s*)?(?:(?:การ\s*)?(?:ทำ\s*)?รายการ(?:\s*โอน(?:\s*เงิน)?)?'
@@ -73,8 +120,13 @@ class SlipOcrParser {
     '|$_thaiReferencePrefix$_thaiReferenceWord(?:\\s*ที่)?',
     caseSensitive: false,
   );
+  static final _explicitReferenceCue = RegExp(
+    '$_thaiReferencePrefix$_thaiReferenceWord|\\bRRN\\b',
+    caseSensitive: false,
+  );
+  static final _truncatedReference = RegExp(r'\s*(?:\.{2,}|…+)\s*$');
   static final _referencePrefix = RegExp(r'^[\s.:：#=|()–—-]+');
-  static final _referenceValuePrefix = RegExp(r'^[.:#=( ]+');
+  static final _referenceValuePrefix = RegExp(r'^[.:#=(| ]+');
   static final _numberedReference = RegExp(r'^\d{1,2}\s*[:：=#]');
   static final _referenceToken =
       RegExp(r'^[A-Z0-9_/-]+$', caseSensitive: false);
@@ -82,7 +134,7 @@ class SlipOcrParser {
   static final _referenceSpacing = RegExp(r'[\s\u200B\u2060\uFEFF]+');
   static final _nonTransactionIdCue = RegExp(
     r'^(?:account|acct|tax|invoice|order|customer|biller|merchant)(?=$|[\s.:#=])'
-    r'|^(?:เลข\s*(?:ที่\s*)?บัญชี|บัญชี|ภาษี|เลขประจำตัว)',
+    r'|^(?:เลข\s*(?:ที่\s*)?บัญชี|บัญชี|ภาษี|เลขประจำตัว|(?:g\s*[-–]?\s*)?wallet\s*id|วอล\s*เล็?ท\s*ไอดี)',
     caseSensitive: false,
   );
   static final _referenceNeighborCue = RegExp(
@@ -119,6 +171,10 @@ class SlipOcrParser {
     r'\b(?:kbank|kasikorn(?:bank)?|scb|krung\s?thai|krung\s?sri|ttb|promptpay'
     r'|bangkok bank|government savings bank)\b'
     r'|ธนาคาร|พร้อม\s*เพย์|กสิกร\s*ไทย|ไทย\s*พาณิชย์|กรุง\s*ศรี|กรุง\s*ไทย',
+    caseSensitive: false,
+  );
+  static final _walletSlipCue = RegExp(
+    r'\b(?:true\s*money|paotang\s*pay|k\s*plus)\b|ทรู\s*มันนี่|เป๋า\s*ตัง',
     caseSensitive: false,
   );
   static final _transferPartiesCue = RegExp(
@@ -253,7 +309,7 @@ class SlipOcrParser {
     r'\b(?:transaction|transfer|payment)\s+(?:date|timestamp)\b'
     r'|\bdate\s+of\s+(?:transaction|transfer|payment)\b'
     r'|\b(?:paid|transferred)\s+on\b'
-    r'|วัน\s*(?:ที่|เวลา)?\s*(?:(?:ทำ\s*)?รายการ|(?:การ\s*)?โอน|ชำระ\s*เงิน)'
+    r'|วัน\s*(?:ที่|เวลา)?\s*(?:ที่\s*)?(?:(?:ทำ\s*)?รายการ|(?:การ\s*)?โอน|ชำระ\s*เงิน)'
     r'|(?:ทำ\s*รายการ|โอน(?:\s*เงิน)?|ชำระ\s*เงิน)\s*เมื่อ',
     caseSensitive: false,
   );
@@ -355,12 +411,16 @@ class SlipOcrParser {
     final date = timestamp?.date;
     final hasTransferConfirmation = lines.any(_transferSlipCue.hasMatch);
     final hasBankName = lines.any(_bankCue.hasMatch);
-    final reference = _findTransactionNumber(lines) ??
+    final hasWalletName = lines.any(_walletSlipCue.hasMatch);
+    final labeledReference = _findTransactionNumber(lines);
+    final reference = labeledReference?.value ??
         (amount != null &&
                 date != null &&
                 (hasTransferConfirmation || hasBankName)
             ? _findUnlabeledReference(lines)
             : null);
+    final hasWalletDetails =
+        labeledReference != null && timestamp?.hasTime == true && hasWalletName;
     final hasBankTransferDetails = reference != null &&
         hasBankName &&
         lines.any(_transferPartiesCue.hasMatch);
@@ -378,9 +438,14 @@ class SlipOcrParser {
       date: date,
       hasTime: timestamp?.hasTime ?? false,
       transactionNumber: reference,
+      referenceConfidence:
+          labeledReference?.confidence ?? (reference == null ? 0 : 1),
+      timestampConfidence: timestamp?.confidence ?? 0,
+      hasSlipHint: hasTransferConfirmation || hasBankName || hasWalletName,
       looksLikeTransferSlip: amount != null &&
           ((hasTransferConfirmation && (date != null || reference != null)) ||
-              hasBankTransferDetails),
+              hasBankTransferDetails ||
+              hasWalletDetails),
     );
   }
 
@@ -520,6 +585,7 @@ class SlipOcrParser {
         }
 
         final score = (hasBahtCurrency ? 20 : 0) +
+            (_paidAmountCue.hasMatch(candidate.context) ? 40 : 0) +
             (hasCue ? 10 : 0) +
             (hasDecimals ? 4 : 0) +
             (isGrouped ? 2 : 0);
@@ -574,7 +640,9 @@ class SlipOcrParser {
     return joined;
   }
 
-  static ({DateTime date, bool hasTime})? _findTimestamp(List<String> lines) {
+  static ({DateTime date, bool hasTime, int confidence})? _findTimestamp(
+    List<String> lines,
+  ) {
     final datesByLine = lines.map(_datesInLine).toList();
     final fieldsByLine =
         lines.map((line) => _dateFieldCue.allMatches(line).toList()).toList();
@@ -651,7 +719,9 @@ class SlipOcrParser {
     if (bestClock == null && (possibleDates.length == 1 || bestScore >= 4)) {
       bestClock = _separateTransactionClock(lines);
     }
-    if (bestClock == null) return (date: bestDate, hasTime: false);
+    if (bestClock == null) {
+      return (date: bestDate, hasTime: false, confidence: bestScore);
+    }
     return (
       date: DateTime(
         bestDate.year,
@@ -662,11 +732,12 @@ class SlipOcrParser {
         bestClock.inSeconds % 60,
       ),
       hasTime: true,
+      confidence: bestScore | 1,
     );
   }
 
   static final _clockPadding = RegExp(
-    r'^[\s,;@|()\-]*(?:T|at|เมื่อ)?[\s,;@|()\-]*$',
+    r'^[\s,;@|()‐‑‒–—−-]*(?:T|at|เมื่อ)?[\s,;@|()‐‑‒–—−-]*$',
     caseSensitive: false,
   );
   static final _clockSuffix =
@@ -745,8 +816,8 @@ class SlipOcrParser {
   static String _monthPattern(String month) {
     if (month.codeUnitAt(0) < 0x0E00) return '${RegExp.escape(month)}\\.?';
     final characters = month.split('').map(RegExp.escape);
-    return month.length == 2
-        ? '${characters.join(r'\s*\.?\s*')}\\.?'
+    return month.length <= 3
+        ? '${characters.take(month.length - 1).join(r'\s*')}\\s*\\.?\\s*${characters.last}\\.?'
         : characters.join(r'\s*');
   }
 
@@ -871,9 +942,11 @@ class SlipOcrParser {
         : null;
   }
 
-  static String? _findTransactionNumber(List<String> lines) {
+  static ({String value, int confidence})? _findTransactionNumber(
+    List<String> lines,
+  ) {
     final normalized = lines.map(_normalizeReferenceLine).toList();
-    String? genericReference;
+    ({String value, int confidence})? best;
     for (var index = 0; index < normalized.length; index++) {
       var text = normalized[index];
       final firstLineLength = text.length;
@@ -893,26 +966,38 @@ class SlipOcrParser {
                 label.start,
               ) !=
               null;
+          final isExplicit = _explicitReferenceCue.hasMatch(label.group(0)!);
           final value = text
               .substring(label.end)
               .replaceFirst(_referencePrefix, '')
               .trim();
           if (_numberedReference.hasMatch(value) ||
-              (!isSpecific && _isReferenceQualifier(text, label.start))) {
+              _isReferenceQualifier(text, label.start)) {
             continue;
           }
           final reference = _referenceAfterLabel(
             normalized,
             lastLine,
             value,
+            allowTruncated: isExplicit,
           );
           if (reference == null) continue;
-          if (isSpecific) return reference;
-          genericReference ??= reference;
+          // A wallet receipt can print both the internal transaction number
+          // and a separate reference number. Use the reference in that case.
+          final confidence = isExplicit && isSpecific
+              ? 5
+              : isExplicit
+                  ? 4
+                  : isSpecific
+                      ? 3
+                      : 2;
+          if (best == null || confidence > best.confidence) {
+            best = (value: reference, confidence: confidence);
+          }
         }
       }
     }
-    return genericReference;
+    return best;
   }
 
   static bool _isReferenceQualifier(String text, int labelStart) {
@@ -940,18 +1025,26 @@ class SlipOcrParser {
   static String? _referenceAfterLabel(
     List<String> lines,
     int labelLine,
-    String inline,
-  ) {
+    String inline, {
+    required bool allowTruncated,
+  }) {
     final valueLine = inline.isEmpty ? labelLine + 1 : labelLine;
     if (valueLine >= lines.length) return null;
+    var value = (inline.isEmpty ? lines[valueLine] : inline)
+        .replaceFirst(_referenceValuePrefix, '');
+    final truncated = _truncatedReference.firstMatch(value);
+    if (truncated != null) {
+      if (!allowTruncated) return null;
+      value = value.substring(0, truncated.start);
+    }
     final fragment = _referenceFragment(
-      (inline.isEmpty ? lines[valueLine] : inline)
-          .replaceFirst(_referenceValuePrefix, ''),
+      value,
       standalone: inline.isEmpty,
     );
     if (fragment == null) return null;
 
     final reference = _validReference(fragment);
+    if (truncated != null) return reference == null ? null : '$reference…';
     if (valueLine + 1 >= lines.length) return reference;
     final continuation = _referenceFragment(
       lines[valueLine + 1],
