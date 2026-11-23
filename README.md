@@ -1,107 +1,92 @@
 <div align="center">
-  <img src="./assets/branding/readme_banner.svg" width="100%" alt="KeepTang — บันทึกรายรับรายจ่าย" />
-
-  <h1>เก็บตัง · KeepTang</h1>
-  <p><strong>เห็นภาพการเงินในแต่ละวัน จัดการรายการได้ง่ายขึ้น</strong></p>
-
+  <img src="./assets/branding/readme_banner.svg" width="100%" alt="KeepTang — เก็บตัง" />
+  <p><strong>บันทึกรายรับ รายจ่าย และการโอนเงินในที่เดียว</strong></p>
+  <p>ดูยอดคงเหลือ แยกบัญชีตามที่ใช้จริง และเพิ่มรายการจากสลิปได้</p>
   <p>
-    <img src="https://img.shields.io/badge/Version-1.4.6-0A665E?style=for-the-badge" alt="Version 1.4.6" />
-    <img src="https://img.shields.io/badge/Flutter-Dart-54C5F8?style=for-the-badge&logo=flutter&logoColor=white" alt="Built with Flutter" />
-    <img src="https://img.shields.io/badge/ภาษา-ไทย%20%7C%20English-5265A8?style=for-the-badge" alt="Thai and English" />
+    <a href="https://github.com/thanakorn-official/KeepTang/releases/download/1.4.6/KeepTang-1.4.6.apk"><img src="https://img.shields.io/badge/Android-Download%20APK-0A665E?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="ดาวน์โหลด APK สำหรับ Android" /></a>
+    <a href="https://github.com/thanakorn-official/KeepTang/releases"><img src="https://img.shields.io/badge/GitHub-Releases-24292F?style=for-the-badge&amp;logo=github" alt="GitHub Releases" /></a>
   </p>
-
   <p>
+    <a href="#ฟังก์ชัน">ฟังก์ชัน</a> ·
     <a href="#ภาพตัวอย่าง">ภาพตัวอย่าง</a> ·
-    <a href="#เริ่มต้นใช้งาน">เริ่มต้นใช้งาน</a> ·
-    <a href="https://github.com/thanakorn-official/KeepTang">ซอร์สโค้ด</a>
+    <a href="#สิ่งที่ใช้">สิ่งที่ใช้</a> ·
+    <a href="#โครงสร้างโปรเจกต์">โครงสร้าง</a> ·
+    <a href="#ข้อควรระวัง">ข้อควรระวัง</a>
   </p>
 </div>
 
 ---
 
-## เกี่ยวกับแอป
+## ดาวน์โหลด APK
 
-KeepTang เป็นแอป Flutter สำหรับบันทึกรายรับ รายจ่าย และการโอนเงิน ช่วยดูยอดคงเหลือ ค้นหารายการย้อนหลัง และจัดข้อมูลตามบัญชีหรือหมวดหมู่ ใช้ได้ทั้งภาษาไทยและภาษาอังกฤษ พร้อมธีมสว่างและมืด
+**KeepTang 1.4.6 สำหรับ Android** · [ดาวน์โหลด KeepTang-1.4.6.apk](https://github.com/thanakorn-official/KeepTang/releases/download/1.4.6/KeepTang-1.4.6.apk) · [ดูทุกเวอร์ชัน](https://github.com/thanakorn-official/KeepTang/releases)
 
-## ความสามารถ
+## ฟังก์ชัน
 
-| | ฟีเจอร์ |
-|:--:|---|
-| 💸 | เพิ่มและแก้ไขรายการรายรับ รายจ่าย รวมถึงการโอนระหว่างบัญชี |
-| 📊 | ดูยอดคงเหลือและสรุปการใช้จ่ายตามช่วงเวลาและหมวดหมู่ |
-| 🔎 | ค้นหา กรอง เรียงลำดับ และเลือกจัดการหลายรายการ |
-| 🧾 | อ่านข้อมูลจากภาพสลิป เช่น ยอดเงิน วันที่ เวลา และรหัสอ้างอิง พร้อมให้ตรวจทานก่อนบันทึก |
-| 🗂️ | จัดการบัญชี หมวดหมู่ และไอคอนประกอบรายการ |
-| ↩️ | ย้ายรายการไปถังขยะและกู้คืนรายการที่ลบได้ |
-| 📤 | ส่งออกข้อมูลเป็น CSV และรายงาน PDF |
-| 🌗 | เลือกภาษาไทยหรืออังกฤษ และปรับธีมสว่างหรือมืด |
-
-> การอ่านสลิปภาษาไทยใช้โมเดล OCR ภายในเครื่องบน Android ส่วนการอ่านข้อความและรูปแบบที่อ่านได้อาจแตกต่างกันตามคุณภาพของภาพ ธนาคาร และรูปแบบสลิป ควรตรวจทานข้อมูลก่อนบันทึกทุกครั้ง
+| ฟังก์ชัน | ทำอะไรได้บ้าง |
+| --- | --- |
+| **บันทึกรายการ** | เพิ่มหรือแก้ไขรายรับ รายจ่าย และการโอนระหว่างบัญชี |
+| **แดชบอร์ด** | ดูยอดคงเหลือและกราฟรายรับรายจ่ายตามช่วงเวลาและหมวดหมู่ |
+| **เพิ่มจากสลิป** | ดึงยอดเงิน วันที่ เวลา และเลขอ้างอิงจากภาพ แล้วตรวจแก้ก่อนบันทึก |
+| **ค้นหาและจัดการรายการ** | ค้นหาด้วยชื่อ เลขอ้างอิง หรือ Firebase ID กรอง เรียงลำดับ และจัดการหลายรายการได้ |
+| **บัญชีของฉันและหมวดหมู่** | แยกเงินสดออกจากบัญชีธนาคาร และใช้ไอคอนช่วยแยกหมวดหมู่ |
+| **ถังขยะและส่งออก** | กู้คืนรายการที่ลบ และส่งออกข้อมูลเป็น CSV หรือรายงาน PDF |
+| **บัญชีสมาชิก** | สมัครและเข้าสู่ระบบด้วยอีเมล ขอลิงก์ตั้งรหัสผ่านใหม่ หรือกลับเข้าโหมด Guest ด้วย ID เดิม |
+| **หน้าตาแอป** | รองรับภาษาไทยและอังกฤษ พร้อมธีมสว่างและมืด |
 
 ## ภาพตัวอย่าง
+
+กดภาพเพื่อดูขนาดเต็ม
 
 <div align="center">
   <table>
     <tr>
-      <td align="center"><a href="./screenshot/Dashboard.png"><img src="./screenshot/Dashboard.png" width="220" alt="แดชบอร์ดและยอดคงเหลือ" /></a><br /><strong>แดชบอร์ด</strong></td>
-      <td align="center"><a href="./screenshot/AddTransaction.png"><img src="./screenshot/AddTransaction.png" width="220" alt="ฟอร์มเพิ่มรายการ" /></a><br /><strong>เพิ่มรายการ</strong></td>
-      <td align="center"><a href="./screenshot/SlipAdd.png"><img src="./screenshot/SlipAdd.png" width="220" alt="เพิ่มรายการจากสลิป" /></a><br /><strong>อ่านสลิป</strong></td>
+      <td align="center"><a href="./screenshot/Dashboard.png"><img src="./screenshot/Dashboard.png" width="210" alt="แดชบอร์ดและยอดคงเหลือ" /></a><br /><strong>แดชบอร์ด</strong></td>
+      <td align="center"><a href="./screenshot/AddTransaction.png"><img src="./screenshot/AddTransaction.png" width="210" alt="ฟอร์มเพิ่มรายการ" /></a><br /><strong>เพิ่มรายการ</strong></td>
+      <td align="center"><a href="./screenshot/SlipAdd.png"><img src="./screenshot/SlipAdd.png" width="210" alt="เพิ่มรายการจากสลิป" /></a><br /><strong>อ่านสลิป</strong></td>
     </tr>
     <tr>
-      <td align="center"><a href="./screenshot/Categories.png"><img src="./screenshot/Categories.png" width="220" alt="หมวดหมู่รายการ" /></a><br /><strong>หมวดหมู่</strong></td>
-      <td align="center"><a href="./screenshot/Search.png"><img src="./screenshot/Search.png" width="220" alt="ค้นหารายการ" /></a><br /><strong>ค้นหา</strong></td>
-      <td align="center"><a href="./screenshot/Setting.png"><img src="./screenshot/Setting.png" width="220" alt="หน้าตั้งค่า" /></a><br /><strong>ตั้งค่า</strong></td>
+      <td align="center"><a href="./screenshot/Search.png"><img src="./screenshot/Search.png" width="210" alt="ค้นหารายการ" /></a><br /><strong>ค้นหา</strong></td>
+      <td align="center"><a href="./screenshot/Categories.png"><img src="./screenshot/Categories.png" width="210" alt="จัดการหมวดหมู่" /></a><br /><strong>หมวดหมู่</strong></td>
+      <td align="center"><a href="./screenshot/Setting.png"><img src="./screenshot/Setting.png" width="210" alt="หน้าตั้งค่า" /></a><br /><strong>ตั้งค่า</strong></td>
     </tr>
   </table>
 </div>
 
-## เทคโนโลยี
+## สิ่งที่ใช้
 
-- **แอป:** Flutter และ Dart
-- **ฐานข้อมูล:** Firebase Cloud Firestore
-- **อ่านสลิป:** Google ML Kit และ Tesseract OCR สำหรับภาษาไทยบน Android
-- **กราฟ:** FL Chart
-- **การตั้งค่าในเครื่อง:** SharedPreferences
-
-## เริ่มต้นใช้งาน
-
-ต้องติดตั้ง Flutter SDK, Android SDK และ Java 17 ก่อน จากนั้นเปิดเทอร์มินัลที่โฟลเดอร์โปรเจกต์
-
-```bash
-flutter pub get
-flutter run
-```
-
-โปรเจกต์ต้องตั้งค่า Firebase สำหรับแพลตฟอร์มที่จะใช้งานไว้แล้ว
-
-### สร้าง APK สำหรับ Android
-
-```bash
-flutter build apk --release
-```
-
-ไฟล์ APK จะอยู่ที่ `build/app/outputs/flutter-apk/app-release.apk` เวอร์ชันแอปกำหนดไว้ใน `pubspec.yaml` โดยเลขก่อน `+` คือชื่อเวอร์ชัน และเลขหลัง `+` คือ build number
+| ส่วนของแอป | เทคโนโลยี |
+| --- | --- |
+| หน้าจอและฟอร์ม | Flutter · Dart |
+| ระบบบัญชีและฐานข้อมูล | Firebase Authentication · Cloud Firestore |
+| อ่านข้อความจากสลิป | Google ML Kit · Tesseract OCR สำหรับภาษาไทยบน Android |
+| กราฟและการตั้งค่าในเครื่อง | FL Chart · SharedPreferences |
 
 ## โครงสร้างโปรเจกต์
 
 ```text
-lib/                    โค้ดแอป โมเดล หน้าจอ และบริการ
-android/                โปรเจกต์และส่วน OCR สำหรับ Android
-assets/branding/        โลโก้และภาพแบรนด์
-screenshot/             ภาพหน้าจอตัวอย่าง
-test/                   ชุดทดสอบ
-firestore.rules         กฎ Firestore
-pubspec.yaml            เวอร์ชันและ dependencies
+KeepTang/
+├── lib/
+│   ├── main.dart       จุดเริ่มของแอป
+│   ├── screens/        หน้าจอสมาชิก แดชบอร์ด และตั้งค่า
+│   ├── services/       บัญชี อ่านสลิป และส่งออกข้อมูล
+│   ├── models/         โครงสร้างข้อมูลรายการ
+│   ├── widgets/        ส่วนประกอบหน้าจอที่ใช้ซ้ำ
+│   └── utils/          ภาษาและธีม
+├── android/            ส่วน Android และโมเดล OCR
+├── assets/branding/    โลโก้และภาพแบรนด์
+├── screenshot/         ภาพหน้าจอตัวอย่าง
+├── test/               ชุดทดสอบ
+├── firestore.rules     กฎการเข้าถึงข้อมูล
+└── pubspec.yaml        เวอร์ชันและแพ็กเกจที่ใช้
 ```
 
-## หมายเหตุเรื่องข้อมูล
+## ข้อควรระวัง
 
-แอปใช้ Guest ID เพื่อแยกข้อมูลใน Firestore และยังไม่มีระบบบัญชีสำหรับกู้คืนข้อมูลข้ามอุปกรณ์ กฎ Firestore ปัจจุบันอนุญาตให้อ่านและเขียนข้อมูลในพื้นที่ Guest ได้โดยใช้ Guest ID ดังนั้นผู้ที่ทราบ ID อาจเข้าถึงข้อมูลนั้นได้ เหมาะกับการทดลองหรือสาธิต ควรปรับกฎและเพิ่มระบบยืนยันตัวตนก่อนใช้เก็บข้อมูลส่วนตัวจริง
+- **อ่านสลิป:** ตรวจยอดเงิน วันที่ เวลา และเลขอ้างอิงก่อนบันทึก OCR อาจอ่านคลาดเคลื่อนเมื่อภาพไม่ชัด หรือสลิปแสดงรหัสมาเพียงบางส่วน
+- **โหมด Guest:** กฎเดิมอนุญาตให้อ่านและเขียนข้อมูล Guest โดยไม่ต้องยืนยันตัวตน โหมดนี้เหมาะกับการสาธิตและข้อมูลทดสอบ
+- **บัญชีสมาชิก:** ข้อมูล Guest และสมาชิกอยู่คนละพื้นที่ บัญชีอีเมลต้องเปิด Email/Password และใช้ [กฎ Firestore ของโปรเจกต์](./firestore.rules) บน Firebase ที่แอปเชื่อมต่อ
 
 ## ผู้พัฒนา
 
-พัฒนาโดย [thanakorn-official](https://github.com/thanakorn-official) · [ดูซอร์สโค้ดบน GitHub](https://github.com/thanakorn-official/KeepTang)
-
-<div align="center">
-  <sub>KeepTang — Keep track of your money, one day at a time.</sub>
-</div>
+พัฒนาโดย **[thanakorn-official](https://github.com/thanakorn-official)** · [GitHub Repository](https://github.com/thanakorn-official/KeepTang)
