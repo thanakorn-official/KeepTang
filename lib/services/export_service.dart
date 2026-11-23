@@ -11,7 +11,7 @@ import 'guest_service.dart';
 class ExportService {
   static Future<void> exportCsv(DateTime selectedMonth, String type) async {
     final snapshot =
-        await GuestService.activeGuestDocument.collection('transactions').get();
+        await GuestService.activeDocument.collection('transactions').get();
     final transactions = snapshot.docs
         .map((doc) => TransactionModel.fromMap({...doc.data(), 'id': doc.id}))
         .where((tx) =>

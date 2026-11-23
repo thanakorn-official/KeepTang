@@ -7,10 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/account_service.dart';
 import '../services/guest_service.dart';
+import '../services/slip_inbox_service.dart';
 import '../utils/l10n.dart';
+import 'account_screen.dart';
 import 'dashboard_screen.dart';
-import 'guest_setup_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -74,6 +76,7 @@ class _SplashScreenState extends State<SplashScreen> {
   final Map<String, int> _savedCategoryIconCodes = {};
   double? _loadingBalance;
   bool _hasError = false;
+  bool _openWorkspace = false;
 
   @override
   void initState() {
@@ -90,9 +93,9 @@ class _SplashScreenState extends State<SplashScreen> {
       await minimumDisplayTime;
       if (!mounted) return;
 
-      final destination = GuestService.hasActiveGuest
+      final destination = _openWorkspace
           ? DashboardScreen(initialSnapshot: initialSnapshot)
-          : const GuestSetupScreen();
+          : const AccountScreen();
       Navigator.of(context).pushReplacement(
         PageRouteBuilder<void>(
           pageBuilder: (context, animation, secondaryAnimation) => destination,
@@ -127,14 +130,20 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<QuerySnapshot?> _prepareAccount() async {
     await GuestService.loadSavedGuest();
-    if (!GuestService.hasActiveGuest) return null;
+    await AccountService.restoreSession();
+    await SlipInboxService.migrateLegacy(
+        GuestService.hasActiveGuest ? GuestService.guestScope : null);
+    final member = AccountService.user != null;
+    _openWorkspace = member ||
+        (GuestService.hasActiveGuest && !await AccountService.prefersAccount());
+    if (!_openWorkspace) return null;
 
-    await GuestService.finishPendingLegacyMigration();
+    if (!member) await GuestService.finishPendingLegacyMigration();
     await GuestService.restoreCustomSettings();
     await _loadSavedCategoryStyles();
 
     try {
-      final snapshot = await GuestService.activeGuestDocument
+      final snapshot = await GuestService.activeDocument
           .collection('transactions')
           .orderBy('date', descending: true)
           .get()
@@ -151,8 +160,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _loadSavedCategoryStyles() async {
     final preferences = await SharedPreferences.getInstance();
-    final savedColors = preferences.getString('app_category_color_values');
-    final savedIcons = preferences.getString('app_category_icon_codes');
+    final savedColors = preferences.getString(
+        GuestService.workspacePreferenceKey('app_category_color_values'));
+    final savedIcons = preferences.getString(
+        GuestService.workspacePreferenceKey('app_category_icon_codes'));
 
     try {
       if (savedColors != null) {
@@ -330,7 +341,7 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Widget _buildLoadingCenter(BuildContext context) {
-    final username = GuestService.username?.trim() ?? '';
+    final username = GuestService.workspaceName?.trim() ?? '';
     final displayName = username.isEmpty ? T.get('guestMode') : username;
     final locale = Localizations.localeOf(context).toString();
 

@@ -1,6 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
     // โหมดผู้ใช้ทั่วไป (Guest): พื้นที่ข้อมูลแยกตามชื่อผู้ใช้
     // หมายเหตุ: ใครก็เข้าถึง guestId ที่รู้ได้ — เหมาะกับการใช้งานทั่วไป
     // ถ้าต้องการความปลอดภัยจริง ให้กลับมาใช้ระบบบัญชีจริงภายหลัง

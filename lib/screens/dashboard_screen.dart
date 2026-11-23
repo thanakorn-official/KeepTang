@@ -167,8 +167,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<SlipInboxDraft> _slipDrafts = [];
   bool _isSlipInboxOpen = false;
 
-  CollectionReference get _transactionsCollection =>
-      GuestService.activeGuestDocument.collection('transactions');
+  final CollectionReference _transactionsCollection =
+      GuestService.activeDocument.collection('transactions');
+
+  final _slipInbox = SlipInboxService(GuestService.workspaceScope);
 
   String _groupType = 'monthly';
   String _sortOrder = 'newest';
@@ -226,7 +228,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (!isActive()) return null;
     if (assets.isEmpty) return 0;
 
-    final processedIds = await SlipInboxService.loadProcessedAssetIds();
+    final processedIds = await _slipInbox.loadProcessedAssetIds();
     final pendingIds =
         _slipDrafts.map((draft) => draft.assetId).whereType<String>().toSet();
 
@@ -302,7 +304,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           addedCount++;
         }
         pendingIds.add(asset.id);
-        await SlipInboxService.saveDrafts(_slipDrafts);
+        await _slipInbox.saveDrafts(_slipDrafts);
       }
     } finally {
       await recognizer.close();
@@ -386,7 +388,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String? scanStatus;
 
     try {
-      _slipDrafts = await SlipInboxService.loadDrafts();
+      _slipDrafts = await _slipInbox.loadDrafts();
       if (!mounted) return;
       await showModalBottomSheet<void>(
         context: context,
@@ -464,7 +466,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   transactionNo: result.referenceNumber,
                 );
                 final updatedDrafts = [..._slipDrafts, draft];
-                await SlipInboxService.saveDrafts(updatedDrafts);
+                await _slipInbox.saveDrafts(updatedDrafts);
                 if (!sheetContext.mounted) return;
                 setState(() => _slipDrafts = updatedDrafts);
                 setSheetState(() {
@@ -718,7 +720,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 final updatedDrafts = _slipDrafts
                     .map((item) => item.id == draft.id ? edited : item)
                     .toList();
-                await SlipInboxService.saveDrafts(updatedDrafts);
+                await _slipInbox.saveDrafts(updatedDrafts);
                 if (sheetContext.mounted) {
                   setState(() => _slipDrafts = updatedDrafts);
                   setSheetState(() {});
@@ -735,7 +737,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             Future<void> deleteDraft(SlipInboxDraft draft) async {
               try {
-                await SlipInboxService.removeDrafts(
+                await _slipInbox.removeDrafts(
                   _slipDrafts,
                   {draft.id},
                 );
@@ -798,7 +800,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     draftIds.add(draft.id);
                   }
                   await batch.commit();
-                  await SlipInboxService.removeDrafts(_slipDrafts, draftIds);
+                  await _slipInbox.removeDrafts(_slipDrafts, draftIds);
                   _slipDrafts = _slipDrafts
                       .where((draft) => !draftIds.contains(draft.id))
                       .toList();
@@ -913,8 +915,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                                       selected: value ?? false,
                                                     );
                                                     try {
-                                                      await SlipInboxService
-                                                          .saveDrafts(
+                                                      await _slipInbox.saveDrafts(
                                                               updatedDrafts);
                                                       if (sheetContext
                                                           .mounted) {
@@ -1270,7 +1271,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     }
 
-    final customCats = prefs.getString('app_categories_list');
+    final customCats = prefs
+        .getString(GuestService.workspacePreferenceKey('app_categories_list'));
     if (customCats != null) {
       final List<dynamic> decoded = jsonDecode(customCats);
       setState(() {
@@ -1284,7 +1286,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     }
 
-    final catIconsStr = prefs.getString('app_category_icon_codes');
+    final catIconsStr = prefs.getString(
+        GuestService.workspacePreferenceKey('app_category_icon_codes'));
     if (catIconsStr != null) {
       final Map<String, dynamic> decoded = jsonDecode(catIconsStr);
       decoded.forEach((k, v) {
@@ -1297,7 +1300,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     }
 
-    final catColorsStr = prefs.getString('app_category_color_values');
+    final catColorsStr = prefs.getString(
+        GuestService.workspacePreferenceKey('app_category_color_values'));
     if (catColorsStr != null) {
       final Map<String, dynamic> decoded = jsonDecode(catColorsStr);
       decoded.forEach((k, v) {
@@ -1307,7 +1311,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     }
 
-    final customPayments = prefs.getString('app_payments_list');
+    final customPayments = prefs
+        .getString(GuestService.workspacePreferenceKey('app_payments_list'));
     if (customPayments != null) {
       final List<dynamic> decoded = jsonDecode(customPayments);
       setState(() {
@@ -1321,7 +1326,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     }
 
-    final payIconsStr = prefs.getString('app_payment_icon_codes');
+    final payIconsStr = prefs.getString(
+        GuestService.workspacePreferenceKey('app_payment_icon_codes'));
     if (payIconsStr != null) {
       final Map<String, dynamic> decoded = jsonDecode(payIconsStr);
       decoded.forEach((k, v) {
@@ -1334,7 +1340,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     }
 
-    final payColorsStr = prefs.getString('app_payment_color_values');
+    final payColorsStr = prefs.getString(
+        GuestService.workspacePreferenceKey('app_payment_color_values'));
     if (payColorsStr != null) {
       final Map<String, dynamic> decoded = jsonDecode(payColorsStr);
       decoded.forEach((k, v) {
@@ -1510,14 +1517,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _categoryColors[text] = selectedColor;
                     });
                     final prefs = await SharedPreferences.getInstance();
-                    await prefs.setString('app_categories_list',
+                    await prefs.setString(
+                        GuestService.workspacePreferenceKey(
+                            'app_categories_list'),
                         jsonEncode(_categoryIcons.keys.toList()));
                     await prefs.setString(
-                        'app_category_icon_codes',
+                        GuestService.workspacePreferenceKey(
+                            'app_category_icon_codes'),
                         jsonEncode(_categoryIcons
                             .map((k, v) => MapEntry(k, v.codePoint))));
                     await prefs.setString(
-                        'app_category_color_values',
+                        GuestService.workspacePreferenceKey(
+                            'app_category_color_values'),
                         jsonEncode(_categoryColors
                             .map((k, v) => MapEntry(k, v.toARGB32()))));
 
@@ -1652,14 +1663,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _paymentColors[text] = selectedColor;
                     });
                     final prefs = await SharedPreferences.getInstance();
-                    await prefs.setString('app_payments_list',
+                    await prefs.setString(
+                        GuestService.workspacePreferenceKey(
+                            'app_payments_list'),
                         jsonEncode(_paymentIcons.keys.toList()));
                     await prefs.setString(
-                        'app_payment_icon_codes',
+                        GuestService.workspacePreferenceKey(
+                            'app_payment_icon_codes'),
                         jsonEncode(_paymentIcons
                             .map((k, v) => MapEntry(k, v.codePoint))));
                     await prefs.setString(
-                        'app_payment_color_values',
+                        GuestService.workspacePreferenceKey(
+                            'app_payment_color_values'),
                         jsonEncode(_paymentColors
                             .map((k, v) => MapEntry(k, v.toARGB32()))));
 
@@ -4710,7 +4725,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildUserProfileHeader({required double? currentBalance}) {
-    final username = GuestService.username?.trim() ?? '';
+    final username = GuestService.workspaceName?.trim() ?? '';
     final displayName = username.isEmpty ? T.get('guestMode') : username;
     final colors = Theme.of(context).colorScheme;
     final locale = languageNotifier.value == 'th' ? 'th' : 'en';

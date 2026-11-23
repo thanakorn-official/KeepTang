@@ -6,7 +6,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 import '../main.dart';
+import '../services/account_service.dart';
 import '../services/guest_service.dart';
+import 'account_screen.dart';
 import '../utils/l10n.dart';
 import '../widgets/skeleton_loader.dart';
 import 'splash_screen.dart';
@@ -94,8 +96,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Icons.store,
   ];
 
-  CollectionReference get _transactionsCollection =>
-      GuestService.activeGuestDocument.collection('transactions');
+  final CollectionReference _transactionsCollection =
+      GuestService.activeDocument.collection('transactions');
 
   bool _isInTrash(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -498,7 +500,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _purgeExpiredTrash();
       final prefs = await SharedPreferences.getInstance();
 
-      final customCats = prefs.getString('app_categories_list');
+      final customCats = prefs.getString(
+          GuestService.workspacePreferenceKey('app_categories_list'));
       if (customCats != null) {
         final List<dynamic> decoded = jsonDecode(customCats);
         setState(() {
@@ -509,7 +512,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
 
-      final catIconsStr = prefs.getString('app_category_icon_codes');
+      final catIconsStr = prefs.getString(
+          GuestService.workspacePreferenceKey('app_category_icon_codes'));
       if (catIconsStr != null) {
         final Map<String, dynamic> decoded = jsonDecode(catIconsStr);
         setState(() {
@@ -517,7 +521,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
 
-      final catColorsStr = prefs.getString('app_category_color_values');
+      final catColorsStr = prefs.getString(
+          GuestService.workspacePreferenceKey('app_category_color_values'));
       if (catColorsStr != null) {
         final Map<String, dynamic> decoded = jsonDecode(catColorsStr);
         setState(() {
@@ -525,7 +530,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
 
-      final customPayments = prefs.getString('app_payments_list');
+      final customPayments = prefs
+          .getString(GuestService.workspacePreferenceKey('app_payments_list'));
       if (customPayments != null) {
         final List<dynamic> decoded = jsonDecode(customPayments);
         setState(() {
@@ -536,7 +542,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
 
-      final payIconsStr = prefs.getString('app_payment_icon_codes');
+      final payIconsStr = prefs.getString(
+          GuestService.workspacePreferenceKey('app_payment_icon_codes'));
       if (payIconsStr != null) {
         final Map<String, dynamic> decoded = jsonDecode(payIconsStr);
         setState(() {
@@ -544,7 +551,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
 
-      final payColorsStr = prefs.getString('app_payment_color_values');
+      final payColorsStr = prefs.getString(
+          GuestService.workspacePreferenceKey('app_payment_color_values'));
       if (payColorsStr != null) {
         final Map<String, dynamic> decoded = jsonDecode(payColorsStr);
         setState(() {
@@ -568,9 +576,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final colors = jsonEncode(Map<String, int>.from(_categoryColorValues));
     return _queueSettingsSave(() async {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('app_categories_list', categories);
-      await prefs.setString('app_category_icon_codes', icons);
-      await prefs.setString('app_category_color_values', colors);
+      await prefs.setString(
+          GuestService.workspacePreferenceKey('app_categories_list'),
+          categories);
+      await prefs.setString(
+          GuestService.workspacePreferenceKey('app_category_icon_codes'),
+          icons);
+      await prefs.setString(
+          GuestService.workspacePreferenceKey('app_category_color_values'),
+          colors);
       await GuestService.saveCustomSettings();
     });
   }
@@ -581,9 +595,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final colors = jsonEncode(Map<String, int>.from(_paymentColorValues));
     return _queueSettingsSave(() async {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('app_payments_list', payments);
-      await prefs.setString('app_payment_icon_codes', icons);
-      await prefs.setString('app_payment_color_values', colors);
+      await prefs.setString(
+          GuestService.workspacePreferenceKey('app_payments_list'), payments);
+      await prefs.setString(
+          GuestService.workspacePreferenceKey('app_payment_icon_codes'), icons);
+      await prefs.setString(
+          GuestService.workspacePreferenceKey('app_payment_color_values'),
+          colors);
       await GuestService.saveCustomSettings();
     });
   }
@@ -1226,7 +1244,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _changeUsername() async {
-    final controller = TextEditingController(text: GuestService.username);
+    final controller = TextEditingController(text: GuestService.workspaceName);
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1262,16 +1280,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       return;
     }
-    await GuestService.setUsername(name);
-    setState(() {});
+    try {
+      if (AccountService.user == null) {
+        await GuestService.setUsername(name);
+      } else {
+        await AccountService.updateDisplayName(name);
+      }
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) _showAccountError();
+    }
   }
 
+  bool _signingOut = false;
+
+  void _showAccountError() => ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(T.get('authUnavailable'))),
+      );
+
   Future<void> _signOut() async {
+    if (_signingOut) return;
+    final member = AccountService.user != null;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(T.get('signOutConfirmTitle')),
-        content: Text(T.get('signOutConfirmContent')),
+        content:
+            Text(T.get(member ? 'authSignOutHelp' : 'signOutConfirmContent')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -1284,18 +1319,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
 
-    await GuestService.signOut();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SplashScreen()),
-      (_) => false,
-    );
+    setState(() => _signingOut = true);
+    try {
+      if (member) {
+        await AccountService.signOut();
+      } else {
+        await GuestService.signOut();
+      }
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const SplashScreen()),
+        (_) => false,
+      );
+    } catch (_) {
+      if (mounted) _showAccountError();
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
   }
 
-  Widget _buildGuestCard() {
-    final name = GuestService.username ?? '';
+  Widget _buildAccountCard() {
+    final member = AccountService.user;
+    final name = GuestService.workspaceName ?? '';
     final initial = name.isNotEmpty ? name.characters.first.toUpperCase() : '?';
     return Card(
       child: ListTile(
@@ -1309,35 +1356,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(T.get('guestMode'),
-                style: const TextStyle(color: Colors.grey, fontSize: 13)),
-            const SizedBox(height: 2),
-            InkWell(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: GuestService.guestId));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(T.get('guestIdCopied'))),
-                );
-              },
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+        subtitle: member != null
+            ? Text(member.email ?? '', overflow: TextOverflow.ellipsis)
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Flexible(
-                    child: Text(
-                        '${T.get('guestIdLabel')}${GuestService.guestId}',
-                        style:
-                            const TextStyle(color: Colors.grey, fontSize: 11)),
+                  Text(T.get('guestMode'),
+                      style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                  const SizedBox(height: 2),
+                  InkWell(
+                    onTap: () {
+                      Clipboard.setData(
+                          ClipboardData(text: GuestService.guestId));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(T.get('guestIdCopied'))),
+                      );
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                              '${T.get('guestIdLabel')}${GuestService.guestId}',
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 11)),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.copy, size: 12, color: Colors.grey),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.copy, size: 12, color: Colors.grey),
                 ],
               ),
-            ),
-          ],
-        ),
         trailing: IconButton(
           icon: const Icon(Icons.edit_outlined),
           tooltip: T.get('changeUsername'),
@@ -1368,10 +1418,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    _buildGuestCard(),
+                    _buildAccountCard(),
+                    if (AccountService.user == null)
+                      TextButton.icon(
+                        onPressed: _signingOut
+                            ? null
+                            : () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const AccountScreen(),
+                                  ),
+                                ),
+                        icon: const Icon(Icons.person_outline),
+                        label: Text(T.get('authSignInOrRegister')),
+                      ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
-                      onPressed: _signOut,
+                      onPressed: _signingOut ? null : _signOut,
                       icon: const Icon(Icons.logout),
                       label: Text(T.get('signOut')),
                     ),

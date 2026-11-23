@@ -93,16 +93,41 @@ class SlipInboxDraft {
 }
 
 class SlipInboxService {
-  SlipInboxService._();
+  const SlipInboxService(this.scope);
 
+  final String scope;
   static const _draftsKey = 'slip_inbox_drafts';
   static const _corruptDraftsBackupKey = 'slip_inbox_drafts_corrupt_backup';
   static const _processedAssetsKey = 'slip_inbox_processed_assets';
   static final _random = Random.secure();
 
-  static Future<List<SlipInboxDraft>> loadDrafts() async {
+  String _key(String key) => '$scope:$key';
+
+  static Future<void> migrateLegacy(String? savedGuestScope) async {
     final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getString(_draftsKey);
+    const migratedKey = 'slip_inbox_scope_migrated';
+    if (prefs.getBool(migratedKey) == true) return;
+    if (savedGuestScope != null) {
+      final inbox = SlipInboxService(savedGuestScope);
+      for (final key in [_draftsKey, _corruptDraftsBackupKey]) {
+        final value = prefs.getString(key);
+        final target = inbox._key(key);
+        if (value != null && !prefs.containsKey(target)) {
+          await prefs.setString(target, value);
+        }
+      }
+      final processed = prefs.getStringList(_processedAssetsKey);
+      final target = inbox._key(_processedAssetsKey);
+      if (processed != null && !prefs.containsKey(target)) {
+        await prefs.setStringList(target, processed);
+      }
+    }
+    await prefs.setBool(migratedKey, true);
+  }
+
+  Future<List<SlipInboxDraft>> loadDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_key(_draftsKey));
     if (value == null) return [];
 
     dynamic decoded;
@@ -111,8 +136,8 @@ class SlipInboxService {
     } catch (error) {
       debugPrint('Invalid slip inbox data; resetting saved drafts: $error');
       try {
-        await prefs.setString(_corruptDraftsBackupKey, value);
-        await prefs.setString(_draftsKey, jsonEncode([]));
+        await prefs.setString(_key(_corruptDraftsBackupKey), value);
+        await prefs.setString(_key(_draftsKey), jsonEncode([]));
       } catch (saveError) {
         debugPrint('Could not reset invalid slip inbox data: $saveError');
       }
@@ -122,8 +147,8 @@ class SlipInboxService {
     if (decoded is! List) {
       debugPrint('Slip inbox data is not a list; resetting saved drafts.');
       try {
-        await prefs.setString(_corruptDraftsBackupKey, value);
-        await prefs.setString(_draftsKey, jsonEncode([]));
+        await prefs.setString(_key(_corruptDraftsBackupKey), value);
+        await prefs.setString(_key(_draftsKey), jsonEncode([]));
       } catch (error) {
         debugPrint('Could not reset invalid slip inbox data: $error');
       }
@@ -157,10 +182,10 @@ class SlipInboxService {
     return drafts;
   }
 
-  static Future<void> saveDrafts(List<SlipInboxDraft> drafts) async {
+  Future<void> saveDrafts(List<SlipInboxDraft> drafts) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-      _draftsKey,
+      _key(_draftsKey),
       jsonEncode(drafts.map((draft) => draft.toJson()).toList()),
     );
   }
@@ -204,12 +229,13 @@ class SlipInboxService {
     );
   }
 
-  static Future<Set<String>> loadProcessedAssetIds() async {
+  Future<Set<String>> loadProcessedAssetIds() async {
     final prefs = await SharedPreferences.getInstance();
-    return (prefs.getStringList(_processedAssetsKey) ?? <String>[]).toSet();
+    return (prefs.getStringList(_key(_processedAssetsKey)) ?? <String>[])
+        .toSet();
   }
 
-  static Future<void> removeDrafts(
+  Future<void> removeDrafts(
     List<SlipInboxDraft> drafts,
     Set<String> ids, {
     bool markAssetsProcessed = true,
@@ -225,11 +251,12 @@ class SlipInboxService {
 
     if (markAssetsProcessed) {
       final prefs = await SharedPreferences.getInstance();
-      final processed = prefs.getStringList(_processedAssetsKey) ?? <String>[];
+      final key = _key(_processedAssetsKey);
+      final processed = prefs.getStringList(key) ?? <String>[];
       final updated = {...processed, ...removed.map((draft) => draft.assetId)}
           .whereType<String>()
           .toList();
-      await prefs.setStringList(_processedAssetsKey, updated);
+      await prefs.setStringList(key, updated);
     }
   }
 }

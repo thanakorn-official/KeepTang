@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'account_service.dart';
+
 /// Guest ID ระบุพื้นที่ข้อมูลใน Firestore ส่วนชื่อผู้ใช้เป็นชื่อแสดงผล
 class GuestService {
   static const _idKey = 'guest_id';
@@ -37,6 +39,24 @@ class GuestService {
   static bool get hasActiveGuest =>
       _guestId != null && (_username ?? '').isNotEmpty;
 
+  static String? get workspaceName =>
+      AccountService.user != null ? AccountService.displayName : username;
+
+  static bool get hasActiveWorkspace =>
+      AccountService.user != null || hasActiveGuest;
+
+  static String get guestScope => 'guest:$guestId';
+
+  static String get workspaceScope {
+    final uid = AccountService.user?.uid;
+    return uid == null ? guestScope : 'member:$uid';
+  }
+
+  static String workspacePreferenceKey(String key) {
+    final uid = AccountService.user?.uid;
+    return uid == null ? key : 'member:$uid:$key';
+  }
+
   static CollectionReference<Map<String, dynamic>> get _guests =>
       FirebaseFirestore.instance.collection('guests');
 
@@ -45,6 +65,13 @@ class GuestService {
       throw StateError('Create or restore a Guest ID first.');
     }
     return _guests.doc(guestId);
+  }
+
+  static DocumentReference<Map<String, dynamic>> get activeDocument {
+    final uid = AccountService.user?.uid;
+    return uid == null
+        ? activeGuestDocument
+        : FirebaseFirestore.instance.collection('users').doc(uid);
   }
 
   static bool _isValidGuestId(String id) =>
@@ -212,18 +239,20 @@ class GuestService {
   ) =>
       guest.collection('settings').doc('preferences');
 
-  /// Saves local category and payment preferences for the active Guest ID.
+  /// Saves local category and payment preferences for the active workspace.
   static Future<void> saveCustomSettings() async {
-    if (!hasActiveGuest) return;
-    final guest = activeGuestDocument;
+    if (!hasActiveWorkspace) return;
+    final scope = workspaceScope;
+    final workspace = activeDocument;
     final prefs = await SharedPreferences.getInstance();
-    if (!hasActiveGuest || guest.id != guestId) return;
-    final values = <String, String>{
-      for (final key in _customSettingKeys)
-        if (prefs.getString(key) != null) key: prefs.getString(key)!,
-    };
+    if (!hasActiveWorkspace || workspaceScope != scope) return;
+    final values = <String, String>{};
+    for (final key in _customSettingKeys) {
+      final value = prefs.getString(workspacePreferenceKey(key));
+      if (value != null) values[key] = value;
+    }
     try {
-      await _preferencesFor(guest).set({
+      await _preferencesFor(workspace).set({
         'values': values,
         'updatedAt': FieldValue.serverTimestamp(),
       }).timeout(const Duration(seconds: 8));
@@ -232,24 +261,26 @@ class GuestService {
     }
   }
 
-  /// Restores the active Guest's category and payment preferences locally.
+  /// Restores the active workspace's category and payment preferences locally.
   static Future<void> restoreCustomSettings() async {
-    if (!hasActiveGuest) return;
-    final guest = activeGuestDocument;
+    if (!hasActiveWorkspace) return;
+    final scope = workspaceScope;
+    final workspace = activeDocument;
     final prefs = await SharedPreferences.getInstance();
     try {
-      final doc = await _preferencesFor(guest)
+      final doc = await _preferencesFor(workspace)
           .get()
           .timeout(const Duration(seconds: 8));
       final values = doc.data()?['values'];
       if (values is Map) {
         for (final key in _customSettingKeys) {
-          if (!hasActiveGuest || guest.id != guestId) return;
+          if (!hasActiveWorkspace || workspaceScope != scope) return;
+          final localKey = workspacePreferenceKey(key);
           final value = values[key];
           if (value is String) {
-            await prefs.setString(key, value);
+            await prefs.setString(localKey, value);
           } else {
-            await prefs.remove(key);
+            await prefs.remove(localKey);
           }
         }
       }
